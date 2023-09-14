@@ -1,29 +1,34 @@
-﻿using JetBrains.Annotations;
+﻿namespace core.util.files;
 
-namespace core.util.files;
 
 public class WindowsFilesScanner : IFilesScanner
 {
+  private readonly string _directory;
+
   [ThreadStatic]
   private static DirectoryScanner? _scanner;
 
   private readonly TaskFactory _taskFactory;
 
-  public WindowsFilesScanner(bool sync = false)
+  public WindowsFilesScanner(string directory, bool sync = false)
   {
-    _taskFactory = new TaskFactory(new ConcurrentExclusiveSchedulerPair(TaskScheduler.Default, Environment.ProcessorCount).ConcurrentScheduler);
+    _directory = directory;
+    var concurrentScheduler = new ConcurrentExclusiveSchedulerPair(TaskScheduler.Default, Environment.ProcessorCount).ConcurrentScheduler;
+    _taskFactory = new TaskFactory(CancellationToken.None, TaskCreationOptions.AttachedToParent, TaskContinuationOptions.ExecuteSynchronously, concurrentScheduler);
   }
 
-  public Task Visit(string dir, Predicate<ScanItem> scanSubtree)
+  public Task Visit(Predicate<ScanItem> scanSubtree)
   {
-    var directory = dir.TrimEnd('/', '\\');
+    var directory = _directory.TrimEnd('/', '\\');
     var item = new FsItem(Path.GetFileName(directory), 0, true);
     return ScanRecursive(item, Path.GetDirectoryName(directory) + "\\", scanSubtree);
   }
 
-  [MustUseReturnValue]
-  private Task ScanRecursive(FsItem item, string parentPath, Predicate<ScanItem> scanSubtree, bool sync = false)
+  private async Task ScanRecursive(FsItem item, string parentPath, Predicate<ScanItem> scanSubtree, bool sync = false)
   {
+    if (!sync)
+      await RunTask(() => { }); // HACK: FORCE YIELD to scheduler
+
     var scanObject = parentPath + item.Name;
     if (scanObject[^1] != Path.DirectorySeparatorChar) scanObject += Path.DirectorySeparatorChar;
 
@@ -31,7 +36,7 @@ public class WindowsFilesScanner : IFilesScanner
 
     item.Items = _scanner.Scan(scanObject);
     if (item.Items == null)
-      return Task.CompletedTask; //Access to directory denied
+      return; //Access to directory denied
 
     var tasks = new List<Task>();
     for (var i = item.Items.Count - 1; i >= 0; i--)
@@ -40,7 +45,9 @@ public class WindowsFilesScanner : IFilesScanner
       
       var scanWeiter = scanSubtree(new ScanItem(child.LastModified, child.IsDir, Path.Combine(scanObject, child.Name)));
       if (!scanWeiter)
-        return Task.CompletedTask;
+      {
+        continue;
+      }
 
       if (child.IsDir)
       {
@@ -48,11 +55,12 @@ public class WindowsFilesScanner : IFilesScanner
           ScanRecursive(child, scanObject, scanSubtree, sync).Wait();
         else
         {
-          tasks.Add(RunTask(() => ScanRecursive(child, scanObject, scanSubtree, sync).Wait()));
+          /* attached to parent */
+          tasks.Add(ScanRecursive(child, scanObject, scanSubtree, sync));
         }
       }
     }
-    return Task.WhenAll(tasks.ToArray());
+    await Task.WhenAll(tasks.ToArray());
   }
 
   private Task RunTask(Action function)

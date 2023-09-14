@@ -42,7 +42,8 @@ static void RunOptions(Options opts)
     using var def = new LifetimeDefinition();
     var currentDirectory = Directory.GetCurrentDirectory();
     var printer = new VimgrepPrinter(currentDirectory);
-    var cmd = new QueryCommand(def.Lifetime, IndexLocationHelper.GetIndexPath(opts, currentDirectory), printer, searchInFiles: !opts.OnlyOutputFiles, ignoreCase);
+    var indexPath = IndexLocationHelper.GetIndexPath(opts, currentDirectory);
+    var cmd = new QueryCommand(def.Lifetime, indexPath, printer, searchInFiles: !opts.OnlyOutputFiles, ignoreCase);
     if (opts.IndexOnly)
     {
       cmd.PrintIndexOnly(query, printer);

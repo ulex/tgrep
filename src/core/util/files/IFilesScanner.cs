@@ -2,5 +2,5 @@
 
 public interface IFilesScanner
 {
-  Task Visit(string dir, Predicate<ScanItem> scanSubtree);
+  Task Visit(Predicate<ScanItem> scanSubtree);
 }

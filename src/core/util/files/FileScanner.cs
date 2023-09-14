@@ -2,18 +2,20 @@
 
 public class FileScanner : IFilesScanner
 {
+  private readonly string _directory;
   private readonly bool _sync;
   private readonly TaskFactory _taskFactory;
 
-  public FileScanner(bool sync)
+  public FileScanner(string directory, bool sync)
   {
+    _directory = directory;
     _sync = sync;
     _taskFactory = new TaskFactory(new ConcurrentExclusiveSchedulerPair(TaskScheduler.Default, Environment.ProcessorCount).ConcurrentScheduler);
   }
 
-  public Task Visit(string dir, Predicate<ScanItem> scanSubtree)
+  public Task Visit(Predicate<ScanItem> scanSubtree)
   {
-    return TraverseDirectory(new DirectoryInfo(dir), scanSubtree);
+    return TraverseDirectory(new DirectoryInfo(_directory), scanSubtree);
   }
 
   private Task TraverseDirectory(DirectoryInfo directoryInfo, Predicate<ScanItem> scanSubtree)

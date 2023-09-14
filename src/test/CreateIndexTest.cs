@@ -20,7 +20,7 @@ public class CreateIndexTest
     var indexPath = tr.OutName(".idx");
     await using var stream = File.Create(indexPath);
     var index = new MultiIndexBulder(stream);
-    tr.AcceptAllFiles((path, lwt, t) => index.AddDocument(path, lwt, t),
+    await tr.AcceptAllFiles((path, lwt, t) => index.AddDocument(path, lwt, t),
 #if DEBUG
       sync: true
       #else

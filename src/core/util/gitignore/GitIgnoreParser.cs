@@ -52,14 +52,16 @@ namespace core.util
         {
           var reList = list.OrderBy(str => str).Select(PrepareRegexPattern).ToList();
           return (
-            new Regex($"(?:{string.Join(")|(?:", reList)})"),
-            reList.Select(s => new Regex(s)).ToArray()
+            new Regex($"(?:{string.Join(")|(?:", reList)})", RegexOptions),
+            reList.Select(s => new Regex(s, RegexOptions)).ToArray()
           );
         }
       }
 
       return (Submatch(positive), Submatch(negative));
     }
+
+    private static RegexOptions RegexOptions => RegexOptions.Compiled;
 
     public static (IEnumerable<string> Accepted, IEnumerable<string> Denied) Parse(string gitignorePath, bool ignoreGitDirectory)
     {
@@ -469,7 +471,7 @@ namespace core.util
             try
             {
 #pragma warning disable S1481 // Unused local variables should be removed
-                Regex regex = new Regex($"(?:{re})");
+                Regex regex = new Regex($"(?:{re})", RegexOptions);
 #pragma warning restore S1481 // Unused local variables should be removed
             }
             catch (ArgumentException ex)

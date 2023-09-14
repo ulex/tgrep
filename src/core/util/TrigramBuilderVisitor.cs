@@ -20,10 +20,13 @@ public class TrigramBuilderVisitor
     return Path.Combine(OutDir, RepoName + name);
   }
 
-  public void AcceptAllFiles([InstantHandle] Action<string, long, IReadOnlyCollection<int>> visitor, bool sync = false)
+  public Task AcceptAllFiles([InstantHandle] Action<string, long, IReadOnlyCollection<int>> visitor, bool sync = false)
   {
-    FileScannerBuilder.Build(sync).Visit(_gitRepoPath, i => 
+    return FileScannerBuilder.Build(_gitRepoPath, sync).Visit(i =>
     {
+      if (i.IsDirectory)
+        return true;
+
       var trigrams = Utils.ReadTrigrams(i.Path);
       visitor(i.Path, i.ModStamp, trigrams);
       return true;

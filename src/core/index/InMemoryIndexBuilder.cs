@@ -243,6 +243,16 @@ public class InMemoryIndexBuilder
     return documentTableOffset;
   }
 
+  public void Clear()
+  {
+    lock (_documents)
+    {
+      _documents.Clear();
+      Array.Clear(_index);
+      _totalTrigrams = 0;
+    }
+  }
+
   public void SaveTo(string filepath)
   {
     using (var st = File.Create(filepath))

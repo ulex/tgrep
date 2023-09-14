@@ -11,23 +11,15 @@ public class MultiIndexBulder
 {
   private readonly long _maxSize;
 
-  private InMemoryIndexBuilder _currentIndexBuilder;
-
-  private readonly ReaderWriterLockSlim _rwLock = new();
-  private readonly Channel<InMemoryIndexBuilder> _channel;
   private readonly Stream _outputStream;
   private readonly TaskCompletionSource _finished = new();
+  private readonly FlippingBuffer<InMemoryIndexBuilder> _flippingBuffer;
 
   public MultiIndexBulder(Stream outputStream, long maxSize = 128 * 1024 * 1024, InMemoryIndexBuilder? builder = null)
   {
     _outputStream = outputStream;
     _maxSize = maxSize;
-    _currentIndexBuilder = builder ?? new InMemoryIndexBuilder();
-    _channel = Channel.CreateBounded<InMemoryIndexBuilder>(new BoundedChannelOptions(2)
-    {
-      SingleReader = true
-    });
-    StartWriter();
+    _flippingBuffer = new FlippingBuffer<InMemoryIndexBuilder>(new InMemoryIndexBuilder(), builder ?? new InMemoryIndexBuilder());
   }
 
   public static MultiIndexBulder OpenAppendOnly(Lifetime lifetime, string path)
@@ -50,60 +42,39 @@ public class MultiIndexBulder
     return new MultiIndexBulder(fileStream, builder: lastIndex);
   }
 
-
-  public async void StartWriter()
-  {
-    try
-    {
-      await foreach (var item in _channel.Reader.ReadAllAsync())
-      {
-        item.SaveTo(_outputStream);
-      }
-      _finished.SetResult();
-    }
-    catch (Exception e)
-    {
-      _finished.SetException(e);
-    }
-  }
-
   public void AddDocument(string path, long modificationUtc, IEnumerable<int> trigrams)
   {
-    if (_currentIndexBuilder.EstimatedSize > _maxSize)
+    if (_flippingBuffer.BackUnsafe.EstimatedSize > _maxSize)
     {
-      StartNewWriter(new InMemoryIndexBuilder());
+      Flip(false);
     }
-
-    _rwLock.EnterReadLock();
-    try
-    {
-      _currentIndexBuilder.AddDocument(path, modificationUtc, trigrams);
-    }
-    finally
-    {
-      _rwLock.ExitReadLock();
-    }
+    _flippingBuffer.WithBack(b => b.AddDocument(path, modificationUtc, trigrams));
   }
 
-  private void StartNewWriter(InMemoryIndexBuilder? newWriter)
+  private void Flip(bool final)
   {
-    _rwLock.EnterWriteLock();
-    try
+    bool flipped = final ? _flippingBuffer.Flip() : _flippingBuffer.Flip(f => f.back.EstimatedSize > _maxSize);
+    if (flipped)
     {
-      var old = _currentIndexBuilder;
-      _currentIndexBuilder = newWriter!; // disposed, not expecting new documents to be added
-      _channel.Writer.WriteAsync(old).AsTask().Wait();
-    }
-    finally
-    {
-      _rwLock.ExitWriteLock();
+      var task = Task.Run(() => _flippingBuffer.WithFront(b =>
+      {
+        b.SaveTo(_outputStream);
+        b.Clear();
+      }));
+      if (final)
+        task.ContinueWith(t =>
+        {
+          if (t.Exception != null)
+            _finished.SetException(t.Exception);
+          else
+            _finished.SetResult();
+        });
     }
   }
 
   public Task Complete()
   {
-    StartNewWriter(null);
-    _channel.Writer.Complete();
+    Flip(true);
     return _finished.Task;
   }
 }

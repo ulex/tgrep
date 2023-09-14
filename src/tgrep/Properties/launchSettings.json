@@ -2,8 +2,8 @@
   "profiles": {
     "tgrep": {
       "commandName": "Project",
-      "commandLineArgs": "-S Ide.Tasks.AddTask",
-      "workingDirectory": "C:\\bench\\testwt"
+      "commandLineArgs": "UNUSED_VARIABLE",
+      "workingDirectory": "C:\\work\\main"
     }
   }
 }

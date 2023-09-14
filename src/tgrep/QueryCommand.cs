@@ -32,62 +32,65 @@ public class QueryCommand
       {
         var multiIndexBulder = new MultiIndexBulder(writer);
 
-        FileScannerBuilder.Build().Visit(_directory, i =>
-        {
-          if (i.Path == indexPath) // ignore index file itself
-            return true;
-          var trigrams = Utils.ReadTrigrams(i.Path);
-          Interlocked.Increment(ref n);
-          multiIndexBulder.AddDocument(i.Path, i.ModStamp, trigrams);
+        var visitTask = FileScannerBuilder.Build(_directory).Visit(
+          i =>
+          {
+            if (i.Path == indexPath) // ignore index file itself
+              return true;
 
-          return true;
-        });
+            if (i.IsDirectory)
+              return true;
+
+            var trigrams = Utils.ReadTrigrams(i.Path);
+            Interlocked.Increment(ref n);
+            multiIndexBulder.AddDocument(i.Path, i.ModStamp, trigrams);
+
+            return true;
+          });
+        visitTask.Wait();
 
         multiIndexBulder.Complete().Wait();
       }
+
       Console.Error.WriteLine($"completed in {watch.Elapsed}, indexed {n} files");
     }
 
-    _multiIndex = new MultiIndex(lifetime, indexPath);
+    var indexLdef = lifetime.CreateNested();
+    try
+    {
+      _multiIndex = new MultiIndex(indexLdef.Lifetime, indexPath);
+    }
+    catch (Exception)
+    {
+      indexLdef.Terminate();
+      File.Delete(indexPath);
+      throw;
+    }
   }
 
   public void Start(string query, VimgrepPrinter printer, bool useGitIgnore)
   {
-    GitignoreParser parser = null;
-    if (useGitIgnore)
-    {
-      foreach (var parent in FsUtil.Parents(_directory))
-      {
-        var path = Path.Combine(parent, ".gitignore");
-        if (File.Exists(path))
-        {
-          parser = new GitignoreParser(path, true);
-        }
-      }
-    }
-
     var state = _multiIndex.CreateIndexStateForQuery(query);
-    FileScannerBuilder.Build().Visit(_directory,
-      i =>
-      {
-        var search = state.DoesItMakeAnySenseToSearchInFile(i.Path, i.ModStamp);
-        if (search == false)
-          return true;
-
-        if (parser != null && parser.Denies(i.Path))
-          return false;
-
-        if (!_searchInFiles)
-        {
-          _printer.PrintFile(i.Path);
-        }
-        else
-        {
-          SearchInFile(query, i.Path, printer);
-        }
-
+    FileScannerBuilder.Build(_directory, useGitIgnore: useGitIgnore).Visit(i =>
+    {
+      if (i.IsDirectory)
         return true;
-      });
+
+      var search = state.DoesItMakeAnySenseToSearchInFile(i.Path, i.ModStamp);
+      if (search == false)
+        return true;
+
+      if (!_searchInFiles)
+      {
+        _printer.PrintFile(i.Path);
+      }
+      else
+      {
+        SearchInFile(query, i.Path, printer);
+      }
+
+      return true;
+    }).Wait();
   }
 
   public void PrintIndexOnly(string query, VimgrepPrinter printer)
@@ -113,7 +116,7 @@ public class QueryCommand
     using var fileStream = File.OpenRead(path);
     if (fileStream.Length > int.MaxValue)
       throw new HackathonException("HKTN: File greater than 2gb are not supported at the moment");
-    
+
     var reader = new StreamReader(fileStream);
     var buffer = ArrayPool<char>.Shared.Rent((int)fileStream.Length);
 
@@ -127,6 +130,7 @@ public class QueryCommand
       {
         return; // binary file!
       }
+
       totalRead += read;
     } while (read > 0);
 
@@ -155,11 +159,12 @@ public class QueryCommand
       if (matchIndex == -1)
         break;
 
-      
+
       printer.Print(path, offset, bufferSpan);
 
       offset += query.Length;
     }
+
     ArrayPool<char>.Shared.Return(buffer);
   }
 }
