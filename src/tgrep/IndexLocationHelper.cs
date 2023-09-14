@@ -18,24 +18,19 @@ public class IndexLocationHelper
       indexPath = FindExistingIndex(directory);
     }
 
-    return indexPath;
+    return indexPath ?? GetDefaultIndexDirectory();
   }
 
-  private static string FindExistingIndex(string origin)
+  public static string? FindExistingIndex(string origin)
   {
-    var directory = origin;
-    while (!string.IsNullOrEmpty(directory))
+    foreach (var directory in FsUtil.Parents(origin))
     {
-      var directoryInfo = new DirectoryInfo(directory);
-
       var indexFileName = GetIndexFilePath(directory);
       if (File.Exists(indexFileName))
         return indexFileName;
-      
-      directory = directoryInfo.Parent?.FullName;
     }
 
-    return GetIndexFilePath(origin);
+    return null;
   }
 
   private static string GetIndexFilePath(string directory)

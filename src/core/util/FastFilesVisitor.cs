@@ -12,7 +12,7 @@ public class FastFilesVisitor
     ScanRecursive(item, Path.GetDirectoryName(directory) + "\\", fileConsumer, sync);
   }
 
-  private static void ScanRecursive(FsItem item, string parentPath, Action<string, FsItem> fileConsumer, bool sync = false)
+  private static void ScanRecursive(FsItem item, string parentPath, Action<string, FsItem> fileConsumer, bool sync = false, Predicate<string> skip = null)
   {
     var scanObject = parentPath + item.Name;
     if (scanObject[^1] != Path.DirectorySeparatorChar) scanObject += Path.DirectorySeparatorChar;
@@ -27,6 +27,14 @@ public class FastFilesVisitor
     for (var i = item.Items.Count - 1; i >= 0; i--)
     {
       var child = item.Items[i];
+
+      if (skip != null)
+      {
+        var path = Path.Combine(scanObject, child.Name);
+        if (skip(path))
+          return;
+      }
+
       if (child.IsDir)
       {
         if (sync)

@@ -50,8 +50,20 @@ public class QueryCommand
     _multiIndex = new MultiIndex(lifetime, indexPath);
   }
 
-  public void Start(string query, VimgrepPrinter printer)
+  public void Start(string query, VimgrepPrinter printer, bool useGitIgnore)
   {
+    if (useGitIgnore)
+    {
+      foreach (var parent in FsUtil.Parents(_directory))
+      {
+        var path = Path.Combine(parent, ".gitignore");
+        if (File.Exists(path))
+        {
+          var parser = new GitignoreParser(path, true);
+        }
+      }
+    }
+
     var state = _multiIndex.CreateIndexStateForQuery(query);
     FastFilesVisitor.VisitFiles(_directory, (parent, item) =>
     {
