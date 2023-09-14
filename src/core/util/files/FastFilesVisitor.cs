@@ -1,4 +1,4 @@
-﻿namespace core.util;
+﻿namespace core.util.files;
 
 public class FastFilesVisitor
 {

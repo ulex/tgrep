@@ -1,4 +1,5 @@
-﻿using JetBrains.Annotations;
+﻿using core.util.files;
+using JetBrains.Annotations;
 
 namespace core.util;
 
@@ -19,26 +20,14 @@ public class TrigramBuilderVisitor
     return Path.Combine(OutDir, RepoName + name);
   }
 
-  public void Accept([InstantHandle] Action<FileInfo, IReadOnlyCollection<int>> visitor)
-  {
-    Parallel.ForEach(Utils.VisitFiles(_gitRepoPath), fileInfo =>
-    {
-      if (fileInfo.Exists)
-      {
-        var trigrams = Utils.ReadTrigrams(fileInfo.FullName);
-        visitor(fileInfo, trigrams);
-      }
-    });
-  }
-
   public void AcceptAllFiles([InstantHandle] Action<string, long, IReadOnlyCollection<int>> visitor, bool sync = false)
   {
-    FastFilesVisitor.VisitFiles(_gitRepoPath, (parent, item) =>
+    FileScannerBuilder.Build(sync).Visit(_gitRepoPath, i => 
     {
-      var path = Path.Combine(parent, item.Name);
-      var trigrams = Utils.ReadTrigrams(path);
-      visitor(path, item.LastModified, trigrams);
-    }, sync);
+      var trigrams = Utils.ReadTrigrams(i.Path);
+      visitor(i.Path, i.ModStamp, trigrams);
+      return true;
+    });
   }
 }
 

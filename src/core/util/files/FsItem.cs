@@ -1,6 +1,6 @@
 ﻿using System.Diagnostics;
 
-namespace core.util;
+namespace core.util.files;
 
 [DebuggerDisplay("Dir:{IsDir}, {Name}, {Size} bytes")]
 public class FsItem

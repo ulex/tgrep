@@ -1,4 +1,5 @@
 ﻿using System.Globalization;
+using core.util.files;
 
 namespace tgrep;
 
@@ -13,8 +14,7 @@ public class VimgrepPrinter
 
   public void Print(string path, int offset, Span<char> content)
   {
-    if (path.StartsWith(_directory))
-      path = path.Substring(_directory.Length);
+    path = FsUtil.TryMakeRelative(_directory, path);
 
     var before = content[..offset];
     int line = CountNewlines(before) + 1;
@@ -45,10 +45,7 @@ public class VimgrepPrinter
 
   public void PrintFile(string path)
   {
-    if (path.StartsWith(_directory))
-      path = path.Substring(_directory.Length);
-
-    Console.WriteLine(path);
+    Console.WriteLine(FsUtil.TryMakeRelative(_directory, path));
   }
 
   private static int CountNewlines(Span<char> text)

@@ -1,4 +1,4 @@
-namespace core.util;
+namespace core.util.files;
 
 public static class FsUtil
 {
@@ -14,5 +14,12 @@ public static class FsUtil
       yield return directory;
       directory = directoryInfo.Parent?.FullName;
     }
+  }
+
+  public static string TryMakeRelative(string directory, string path)
+  {
+    if (path.StartsWith(directory))
+      path = path[directory.Length..];
+    return path;
   }
 }

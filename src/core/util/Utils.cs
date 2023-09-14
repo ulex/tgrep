@@ -1,43 +1,12 @@
 ﻿using System.Buffers;
-using System.Collections.Immutable;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using JetBrains.Annotations;
 using JetBrains.Serialization;
-using JetBrains.Util;
 
 namespace core.util;
 
 public static class Utils
 {
-  public static IEnumerable<FileInfo> VisitFiles(string gitDir)
-  {
-    var process = new Process()
-    {
-      StartInfo = new ProcessStartInfo
-      {
-        FileName = "git",
-        WorkingDirectory = gitDir,
-        Arguments = "ls-files",
-        RedirectStandardOutput = true,
-        UseShellExecute = false,
-        CreateNoWindow = true,
-      }
-    };
-    try
-    {
-      process.Start();
-      while (!process.StandardOutput.EndOfStream)
-      {
-        yield return new FileInfo(Path.Combine(gitDir, process.StandardOutput.ReadLine()));
-      }
-    }
-    finally
-    {
-      process.Close();
-    }
-  }
-
   public static string BytesToString(long byteCount)
   {
     string[] suf = { "B", "KB", "MB", "GB", "TB", "PB", "EB" }; //Longs run out around EB
@@ -78,23 +47,6 @@ public static class Utils
     }
     pool.Return(chars);
 
-    /*if (ignoreBinaryFiles)
-    {
-      foreach (var (slice, length) in BinaryFileDetector.ReadAllBytesIfNotBinary(path))
-      {
-        if (length == -1)
-          return EmptyArray.GetInstance<int>();
-
-        m.Feed(slice, length);
-      }
-    }
-    else
-    {
-      var l = File.ReadAllBytes(path);
-      m.Feed(l, l.Length);
-    }
-    */
-
     return m.Trigrams;
   }
 
@@ -108,23 +60,6 @@ public static class Utils
 
     public TrigramCollector()
     {
-    }
-
-    public void Feed(byte[] r, int l)
-    {
-      if (r.Length > 2 && _position == 0)
-      {
-        _tc = r[0] << 8;
-        _tc |= r[1];
-      }
-
-      for (int i = _position == 0 ? 2 : 0; i < l; i++)
-      {
-        _tc = (_tc << 8 | r[i]) & 0x00FFFFFF;
-        Trigrams.Add(_tc);
-      }
-
-      _position += r.Length;
     }
 
     /// <summary>

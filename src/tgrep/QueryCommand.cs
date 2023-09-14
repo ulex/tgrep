@@ -1,8 +1,8 @@
 ﻿using System.Buffers;
 using System.Diagnostics;
-using System.Globalization;
 using core;
 using core.util;
+using core.util.files;
 using JetBrains.Lifetimes;
 
 namespace tgrep;
@@ -32,14 +32,15 @@ public class QueryCommand
       {
         var multiIndexBulder = new MultiIndexBulder(writer);
 
-        FastFilesVisitor.VisitFiles(_directory, (parent, item) =>
+        FileScannerBuilder.Build().Visit(_directory, i =>
         {
-          var fpath = Path.Combine(parent, item.Name);
-          if (fpath == indexPath) // ignore index file itself
-            return;
-          var trigrams = Utils.ReadTrigrams(fpath);
+          if (i.Path == indexPath) // ignore index file itself
+            return true;
+          var trigrams = Utils.ReadTrigrams(i.Path);
           Interlocked.Increment(ref n);
-          multiIndexBulder.AddDocument(fpath, item.LastModified, trigrams);
+          multiIndexBulder.AddDocument(i.Path, i.ModStamp, trigrams);
+
+          return true;
         });
 
         multiIndexBulder.Complete().Wait();
@@ -52,6 +53,7 @@ public class QueryCommand
 
   public void Start(string query, VimgrepPrinter printer, bool useGitIgnore)
   {
+    GitignoreParser parser = null;
     if (useGitIgnore)
     {
       foreach (var parent in FsUtil.Parents(_directory))
@@ -59,28 +61,33 @@ public class QueryCommand
         var path = Path.Combine(parent, ".gitignore");
         if (File.Exists(path))
         {
-          var parser = new GitignoreParser(path, true);
+          parser = new GitignoreParser(path, true);
         }
       }
     }
 
     var state = _multiIndex.CreateIndexStateForQuery(query);
-    FastFilesVisitor.VisitFiles(_directory, (parent, item) =>
-    {
-      var path = Path.Combine(parent, item.Name);
-      var search = state.DoesItMakeAnySenseToSearchInFile(path, item.LastModified);
-      if (search == false)
-        return;
+    FileScannerBuilder.Build().Visit(_directory,
+      i =>
+      {
+        var search = state.DoesItMakeAnySenseToSearchInFile(i.Path, i.ModStamp);
+        if (search == false)
+          return true;
 
-      if (!_searchInFiles)
-      {
-        _printer.PrintFile(path);
-      }
-      else
-      {
-        SearchInFile(query, path, printer);
-      }
-    });
+        if (parser != null && parser.Denies(i.Path))
+          return false;
+
+        if (!_searchInFiles)
+        {
+          _printer.PrintFile(i.Path);
+        }
+        else
+        {
+          SearchInFile(query, i.Path, printer);
+        }
+
+        return true;
+      });
   }
 
   public void PrintIndexOnly(string query, VimgrepPrinter printer)
