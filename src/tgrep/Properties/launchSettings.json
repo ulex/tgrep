@@ -2,7 +2,8 @@
   "profiles": {
     "tgrep": {
       "commandName": "Project",
-      "commandLineArgs": "--vimgrep -i -S хуй"
+      "commandLineArgs": "-S Ide.Tasks.AddTask",
+      "workingDirectory": "C:\\bench\\testwt"
     }
   }
 }

@@ -1,95 +1,9 @@
-﻿using System.ComponentModel;
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using System.Text;
-using System.Threading.Channels;
 using core.util;
-using JetBrains.Annotations;
-using JetBrains.Threading;
+using JetBrains.Diagnostics;
 
 namespace core;
-
-/**
- * Same as <see cref="InMemoryIndexBuilder"/>, but limited by memory usage. In case index became too large to fit in
- * memory it will dump builded content to the disk and start a new index
- */
-public class MultiIndexBulder : IIndexBuilder
-{
-  private readonly long _maxSize;
-
-  private InMemoryIndexBuilder _currentIndexBuilder;
-
-  private readonly ReaderWriterLockSlim _rwLock = new();
-  private readonly Channel<InMemoryIndexBuilder> _channel;
-  private readonly Stream _outputStream;
-
-  public MultiIndexBulder(Stream outputStream, long maxSize = 128 * 1024 * 1024)
-  {
-    _outputStream = outputStream;
-    _maxSize = maxSize;
-    _currentIndexBuilder = new InMemoryIndexBuilder();
-    _channel = Channel.CreateBounded<InMemoryIndexBuilder>(new BoundedChannelOptions(2)
-    {
-      SingleReader = true
-    });
-    StartWriter();
-  }
-
-  public async void StartWriter()
-  {
-    await foreach (var item in _channel.Reader.ReadAllAsync())
-    {
-      item.SaveTo(_outputStream);
-    }
-  }
-
-  public void AddDocument(string path, DateTime modificationUtc, IEnumerable<int> trigrams)
-  {
-    if (_currentIndexBuilder.EstimatedSize > _maxSize)
-    {
-      StartNewWriter(true);
-    }
-
-    _rwLock.EnterReadLock();
-    try
-    {
-      _currentIndexBuilder.AddDocument(path, modificationUtc, trigrams);
-    }
-    finally
-    {
-      _rwLock.ExitReadLock();
-    }
-  }
-
-  private void StartNewWriter(bool conditional)
-  {
-    _rwLock.EnterWriteLock();
-    try
-    {
-      if (conditional && _currentIndexBuilder.EstimatedSize < _maxSize)
-        return;
-      var old = _currentIndexBuilder;
-      _currentIndexBuilder = new InMemoryIndexBuilder();
-      _channel.Writer.WriteAsync(old).AsTask().Wait();
-    }
-    finally
-    {
-      _rwLock.ExitWriteLock();
-    }
-  }
-
-  [MustUseReturnValue]
-  public Task Complete()
-  {
-    StartNewWriter(false);
-    _channel.Writer.Complete();
-    return _channel.Reader.Completion;
-  }
-}
-
-public interface IIndexBuilder
-{
-  void AddDocument(string path, DateTime modificationUtc, IEnumerable<int> trigrams);
-}
 
 /**
 The file with index may contains one or many indexes in the following format:
@@ -120,10 +34,10 @@ The file with index may contains one or many indexes in the following format:
       VarInt32 Length of block
    a single-byte zero, to check for index corruption
 */
-public class InMemoryIndexBuilder : IIndexBuilder
+public class InMemoryIndexBuilder
 {
   private readonly List<int>?[] _index = new List<int>[256 * 256 * 256];
-  private readonly List<DocNode> _documents =  new();
+  private readonly List<DocNode> _documents;
 
   // ReSharper disable once InconsistentlySynchronizedField
   public long EstimatedSize => _totalTrigrams * 2 + _documents.Count * 64;
@@ -132,7 +46,7 @@ public class InMemoryIndexBuilder : IIndexBuilder
 
   public InMemoryIndexBuilder()
   {
-    
+    _documents = new List<DocNode>();
   }
 
   public InMemoryIndexBuilder(IEnumerable<DocNode> documents)
@@ -142,7 +56,7 @@ public class InMemoryIndexBuilder : IIndexBuilder
   }
 
   /// thread-safe
-  public void AddDocument(string path, DateTime modificationUtc, IEnumerable<int> trigrams)
+  public void AddDocument(string path, long modificationUtc, IEnumerable<int> trigrams)
   {
     int docId;
     lock (_documents)
@@ -181,6 +95,15 @@ public class InMemoryIndexBuilder : IIndexBuilder
     lock (list)
     {
       list.AddRange(docIds);
+#if DEBUG
+      lock (_documents)
+      {
+        foreach (var docId in docIds)
+        {
+          Assertion.Assert(docId < _documents.Count);
+        }
+      }
+#endif
     }
     Interlocked.Add(ref _totalTrigrams, docIds.Count);
   }
@@ -231,13 +154,16 @@ public class InMemoryIndexBuilder : IIndexBuilder
         var docIds = _index[i];
         if (docIds != null)
         {
+          docIds.Sort();
           long startOffset = writer.BaseStream.Position;
           int prev = 0;
           foreach (var docId in docIds)
           {
-            var newDocId = lookup[docId];
-            if (newDocId == -1)
+            if (docId == -1)
               continue;
+            var newDocId = lookup[docId];
+            Assertion.Assert(newDocId < _documents.Count);
+    
             writer.WriteVarint(newDocId - prev);
             prev = newDocId;
           }
@@ -275,11 +201,14 @@ public class InMemoryIndexBuilder : IIndexBuilder
 
   private void EnsureDocumentsSorted()
   {
-    for (int i = 0; i < _documents.Count; i++)
+    lock (_documents)
     {
-      var docId = _documents[i].DocId;
-      if (docId != i && docId != -1)
-        throw new InvalidOperationException("Documents aren't sorted by DocId");
+      for (int i = 0; i < _documents.Count; i++)
+      {
+        var docId = _documents[i].DocId;
+        if (docId != i && docId != -1)
+          throw new InvalidOperationException("Documents aren't sorted by DocId");
+      }
     }
   }
 
@@ -296,12 +225,12 @@ public class InMemoryIndexBuilder : IIndexBuilder
       var bytes = Encoding.UTF8.GetBytes(file.Path);
       writer.Write(bytes);
 
-      docRows.Add(new DocRow((uint)(prev - start), (ulong)file.LastWriteTime.ToFileTimeUtc()));
+      docRows.Add(new DocRow((uint)(prev - start), file.LastWriteTime));
       prev = writer.BaseStream.Position;
     }
 
     // fake document
-    docRows.Add(new DocRow((uint)(prev - start), 0xFEEDFEEDFEEDFEED));
+    docRows.Add(new DocRow((uint)(prev - start), 0x0EEDFEEDFEEDFEED));
 
     long documentTableOffset = writer.BaseStream.Position;
     foreach (var docRow in docRows)

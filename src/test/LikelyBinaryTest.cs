@@ -13,7 +13,7 @@ public unsafe class LikelyBinaryTest
 
     var outFilename = Path.GetFileName(gitdir);
     using var f = File.CreateText(Path.Combine(outdir, outFilename + ".trig.binaryfiles.log"));
-    FastFilesVisitory.VisitFiles(gitdir, (dir, fsItem) =>
+    FastFilesVisitor.VisitFiles(gitdir, (dir, fsItem) =>
     {
       /*
       var path = Path.Combine(dir, fsItem.Name);

@@ -1,6 +1,7 @@
 ﻿using System.Diagnostics;
 using System.Text;
 using core.util;
+using JetBrains.Lifetimes;
 
 namespace tests;
 
@@ -13,8 +14,8 @@ public class ReadIndexTest
   {
     var sw = Stopwatch.StartNew();
     var tr = new TrigramBuilderVisitor(gitdir);
-    
-    var index = new MultiIndexReader(tr.OutName(".idx"));
+    using var def = new LifetimeDefinition();
+    var index = new MultiIndex(def.Lifetime, tr.OutName(".idx"));
     sw.Stop();
     Console.WriteLine($"Read index: {sw.ElapsedMilliseconds:D}ms");
 

@@ -2,15 +2,15 @@
 
 namespace core;
 
-public record  struct DocNode(
+public record struct DocNode(
   int DocId, 
   string Path, 
-  DateTime LastWriteTime);
+  long LastWriteTime);
 
 [StructLayout(LayoutKind.Sequential, Pack = 1)]
 public record struct DocRow(
   UInt32 PathOffset,
-  UInt64 ModificationStamp
+  Int64 ModificationStamp
 )
 {
   public static int Sizeof = Marshal.SizeOf<DocRow>();

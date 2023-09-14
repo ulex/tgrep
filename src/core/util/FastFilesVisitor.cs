@@ -1,6 +1,6 @@
 ﻿namespace core.util;
 
-public class FastFilesVisitory
+public class FastFilesVisitor
 {
   [ThreadStatic]
   private static DirectoryScanner? _scanner;

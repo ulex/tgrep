@@ -31,9 +31,9 @@ public class TrigramBuilderVisitor
     });
   }
 
-  public void AcceptAllFiles([InstantHandle] Action<string, DateTime, IReadOnlyCollection<int>> visitor, bool sync = false)
+  public void AcceptAllFiles([InstantHandle] Action<string, long, IReadOnlyCollection<int>> visitor, bool sync = false)
   {
-    FastFilesVisitory.VisitFiles(_gitRepoPath, (parent, item) =>
+    FastFilesVisitor.VisitFiles(_gitRepoPath, (parent, item) =>
     {
       var path = Path.Combine(parent, item.Name);
       var trigrams = Utils.ReadTrigrams(path);

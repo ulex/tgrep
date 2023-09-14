@@ -54,7 +54,7 @@ public class IndexReader
       builder.AddTrigrams(t, docId);
     }
 
-    return ToWritable();
+    return builder;
   }
     
   public IReadOnlyCollection<DocNode> Evaluate(Query query)
@@ -76,7 +76,7 @@ public class IndexReader
     for (int i = 0; i < docCount; i++)
     {
       var offset = reader.ReadUInt32();
-      var modStamp = reader.ReadUInt64();  
+      var modStamp = reader.ReadInt64();  
       result[i] = new DocRow(offset, modStamp);
     }
 
@@ -86,7 +86,7 @@ public class IndexReader
   public unsafe DocNode[] ReadAllDocNodes()
   {
     var docRows = ReadAllDocRows();
-    var result = new DocNode[docRows.Length];
+    var result = new DocNode[docRows.Length - 1];
     _indexStream.Position = _start + _preamble.StringsOffset;
     var pool = ArrayPool<byte>.Shared;
     for (int i = 0; i < docRows.Length - 1; i++)
@@ -99,8 +99,8 @@ public class IndexReader
       Assertion.Assert(read == length);
       fixed (void* bptr = bytes)
       {
-        var path = new string((sbyte*)bptr, 0, bytes.Length, Encoding.UTF8);
-        result[i] = new DocNode(i, path, DateTime.FromFileTimeUtc((long)row.ModificationStamp));
+        var path = new string((sbyte*)bptr, 0, length, Encoding.UTF8);
+        result[i] = new DocNode(i, path, (long)row.ModificationStamp);
       }
       pool.Return(bytes);
     }
@@ -116,7 +116,7 @@ public class IndexReader
     _indexStream.Position = _start + _preamble.DocumentsTableOffset + DocRow.Sizeof * docId;
     var reader = new BinaryReader(_indexStream, Encoding.UTF8, true);
     var offset = reader.ReadUInt32();
-    var modStamp = reader.ReadUInt64();
+    var modStamp = reader.ReadInt64();
     var length = (int) (reader.ReadUInt32() - offset); /* read next offset to obtain length*/
     var row = new DocRow(offset, modStamp);
     
@@ -125,7 +125,7 @@ public class IndexReader
     fixed (void* bptr = bytes)
     {
       var path = new string((sbyte*)bptr, 0, bytes.Length, Encoding.UTF8);
-      return new DocNode(docId, path, DateTime.FromFileTimeUtc((long)row.ModificationStamp));
+      return new DocNode(docId, path, (long)row.ModificationStamp);
     }
   }
 
@@ -165,25 +165,63 @@ public class IndexReader
     throw new ArgumentOutOfRangeException(nameof(query));
   }
 
-  public IReadOnlyCollection<DocNode>? ContainingStr(string str)
+  public IReadOnlyCollection<DocNode> ContainingStr(string str)
   {
-    Query? query = null;
-    var bytes = str;
-    for (int i = 0; i < bytes.Length - 2; i++)
+    if (string.IsNullOrEmpty(str))
     {
-      var trigram = new Trigram(Utils.HashChar(bytes[i]), Utils.HashChar(bytes[i + 1]), Utils.HashChar(bytes[i + 2]));
-      if (query == null)
-        query = new Query.Contains(trigram);
-      else
-        query = new Query.And(query, new Query.Contains(trigram));
+      return ReadAllDocNodes();
+    }
+    Query? query = null;
+    if (str.Length == 1)
+    {
+      var trigrams = new List<Trigram>();
+      var hash = Utils.HashChar(str[0]);
+      foreach (var t in TrigramBlocks.Keys)
+      {
+        if (t.A == hash || t.B == hash || t.C == hash)
+          trigrams.Add(t);
+      }
+      return EvaluateWildcard(trigrams);
+    }
+    else if (str.Length == 2)
+    {
+      var trigrams = new List<Trigram>();
+      var p = Utils.HashChar(str[0]) << 8 & Utils.HashChar(str[1]);
+      foreach (var t in TrigramBlocks.Keys)
+      {
+        if (((t.Val >> 8) == p) || ((t.Val & 0x00FFFF) == p))
+        {
+          trigrams.Add(t);
+        }
+      }
+      return EvaluateWildcard(trigrams);
+    }
+    else
+    {
+      for (int i = 0; i < str.Length - 2; i++)
+      {
+        var trigram = new Trigram(Utils.HashChar(str[i]), Utils.HashChar(str[i + 1]), Utils.HashChar(str[i + 2]));
+        if (query == null)
+          query = new Query.Contains(trigram);
+        else
+          query = new Query.And(query, new Query.Contains(trigram));
+      }
     }
 
-    if (query == null)
-      return null;
-
-    return Evaluate(query);
+    return Evaluate(query!);
   }
-  
+
+  private IReadOnlyCollection<DocNode> EvaluateWildcard(List<Trigram> trigrams)
+  {
+    if (trigrams.Count == 0)
+      return EmptyArray<DocNode>.Instance;
+
+    var head = trigrams.First();
+    var tail = trigrams.Skip(1);
+    var query1 = tail.Aggregate<Trigram, Query>(new Query.Contains(head), (a, b) => new Query.Or(new Query.Contains(b), a));
+    return Evaluate(query1);
+  }
+
   private IReadOnlyCollection<int> GetDocumentsIds(Trigram trigram)
   {
     if (_trigramBlocks.TryGetValue(trigram, out var block))
@@ -196,20 +234,24 @@ public class IndexReader
 
   private IReadOnlyCollection<int> ReadBlock(TrigramBlock block)
   {
-    var result = new List<int>((int)block.Length);
-    var startAbsOffset = block.Offset + _start;
-    _indexStream.Position = startAbsOffset;
-    var endAbsOffset = startAbsOffset + block.Length;
+    var result = new List<int>(block.Length);
+    
+    _indexStream.Position = block.Offset + _start;
+    var bytes = ArrayPool<byte>.Shared.Rent(block.Length);
+    _indexStream.ReadExactly(bytes, 0, block.Length);
+
+    var reader = new BinaryReader(new MemoryStream(bytes, 0, block.Length), Encoding.ASCII);
     int prev = 0;
-      
-    var reader = new BinaryReader(_indexStream, Encoding.ASCII, leaveOpen: true);
-    while (_indexStream.Position < endAbsOffset)
+    while (reader.BaseStream.Position < block.Length)
     {
       var delta = reader.ReadUVarint();
       var val = (int)(delta + prev);
       result.Add(val);
+      Assertion.Assert(val < _preamble.DocumentsCount);
       prev = val;
     }
+    ArrayPool<byte>.Shared.Return(bytes);
+
 
     return result;
   }
@@ -235,7 +277,7 @@ public class IndexReader
       int trigram = prev + reader.ReadVarint();
       prev = trigram;
       var length = reader.ReadUVarint();
-      trigramBlocks.Add(new Trigram(trigram), new TrigramBlock(offset, length));
+      trigramBlocks.Add(new Trigram(trigram), new TrigramBlock(offset, (int)length));
       offset += length;
     }
 

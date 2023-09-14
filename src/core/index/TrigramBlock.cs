@@ -2,4 +2,4 @@
 
 public record TrigramBlock(
   long Offset,
-  uint Length);
+  int Length);
