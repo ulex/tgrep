@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "tgrep": {
+      "commandName": "Project",
+      "commandLineArgs": "--vimgrep -i -S хуй"
+    }
+  }
+}
