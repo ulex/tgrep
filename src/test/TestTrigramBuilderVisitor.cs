@@ -1,15 +1,16 @@
-﻿using core.util.files;
+﻿using core.util;
+using core.util.files;
 using JetBrains.Annotations;
 
-namespace core.util;
+namespace test;
 
-public class TrigramBuilderVisitor
+public class TestTrigramBuilderVisitor
 {
   private readonly string _gitRepoPath;
   public string OutDir { get; } = "C:\\bench";
   public string RepoName { get; }
 
-  public TrigramBuilderVisitor(string gitRepositoryPath)
+  public TestTrigramBuilderVisitor(string gitRepositoryPath)
   {
     _gitRepoPath = gitRepositoryPath;
     RepoName = Path.GetFileName(_gitRepoPath);

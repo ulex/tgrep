@@ -41,9 +41,16 @@ public class QueryCommand
             if (i.IsDirectory)
               return true;
 
-            var trigrams = Utils.ReadTrigrams(i.Path);
-            Interlocked.Increment(ref n);
-            multiIndexBulder.AddDocument(i.Path, i.ModStamp, trigrams);
+            try
+            {
+              var trigrams = Utils.ReadTrigrams(i.Path);
+              Interlocked.Increment(ref n);
+              multiIndexBulder.AddDocument(i.Path, i.ModStamp, trigrams);
+            }
+            catch (Exception exception)
+            {
+              Console.Error.WriteLine(exception.Message);
+            }
 
             return true;
           });
@@ -76,17 +83,24 @@ public class QueryCommand
       if (i.IsDirectory)
         return true;
 
-      var search = state.DoesItMakeAnySenseToSearchInFile(i.Path, i.ModStamp);
-      if (search == false)
-        return true;
+      try
+      {
+        var search = state.DoesItMakeAnySenseToSearchInFile(i.Path, i.ModStamp);
+        if (search == false)
+          return true;
 
-      if (!_searchInFiles)
-      {
-        _printer.PrintFile(i.Path);
+        if (!_searchInFiles)
+        {
+          _printer.PrintFile(i.Path);
+        }
+        else
+        {
+          SearchInFile(query, i.Path, printer);
+        }
       }
-      else
+      catch (Exception e)
       {
-        SearchInFile(query, i.Path, printer);
+        Console.Error.WriteLine(e.Message);
       }
 
       return true;

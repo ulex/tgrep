@@ -1,5 +1,6 @@
 ﻿using core.util;
 using JetBrains.Lifetimes;
+using test;
 
 namespace tests;
 
@@ -15,7 +16,7 @@ public class CreateIndexTest
 
   private static async Task<string> IndexDirectory(string dir)
   {
-    var tr = new TrigramBuilderVisitor(dir);
+    var tr = new TestTrigramBuilderVisitor(dir);
     
     var indexPath = tr.OutName(".idx");
     await using var stream = File.Create(indexPath);
