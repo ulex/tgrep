@@ -20,12 +20,12 @@ public class GitIgnoreScanner : IFilesScanner
       if (_parser.Denies(FsUtil.TryMakeRelative(_rootDirectory, i.Path)))
       {
 #if DEBUG
-          Debug.WriteLine($"Git: reject {i.Path}");
+        System.Diagnostics.Debug.WriteLine($"Git: reject {i.Path}");
 #endif
         return false;
       }
 #if DEBUG
-        Debug.WriteLine($"Git: scan {i.Path}");
+      System.Diagnostics.Debug.WriteLine($"Git: scan {i.Path}");
 #endif
       return scanSubtree(i);
     });

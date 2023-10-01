@@ -132,7 +132,10 @@ public class QueryCommand
       throw new HackathonException("HKTN: File greater than 2gb are not supported at the moment");
 
     var reader = new StreamReader(fileStream);
+    
     var buffer = ArrayPool<char>.Shared.Rent((int)fileStream.Length);
+    using var x = new LifetimeDefinition();
+    x.Lifetime.OnTermination(() => ArrayPool<char>.Shared.Return(buffer));
 
     int totalRead = 0;
     int read = 0;
@@ -163,6 +166,7 @@ public class QueryCommand
       if (bufStr != null)
       {
         matchIndex = bufStr.IndexOf(query, offset, StringComparison.OrdinalIgnoreCase);
+        offset = matchIndex;
       }
       else
       {
@@ -179,6 +183,5 @@ public class QueryCommand
       offset += query.Length;
     }
 
-    ArrayPool<char>.Shared.Return(buffer);
   }
 }

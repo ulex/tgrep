@@ -26,6 +26,9 @@ public class Options
   [Option("vimgrep", Hidden = true /*it is the only option at the moment*/, Required = false, HelpText = "Output results in vim-compatible format")]
   public bool VimGrep { get; set; }
   
+  [Option('F', Required = false, Default = true, Hidden = true, HelpText = "Fixed strings only (the only supported option)")]
+  public bool FixedStrings { get; set; }
+
   [Value(0, MetaName = "query")]
   public string? Query { get; set; }
 

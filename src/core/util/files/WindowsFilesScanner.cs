@@ -24,11 +24,8 @@ public class WindowsFilesScanner : IFilesScanner
     return ScanRecursive(item, Path.GetDirectoryName(directory) + "\\", scanSubtree);
   }
 
-  private async Task ScanRecursive(FsItem item, string parentPath, Predicate<ScanItem> scanSubtree, bool sync = false)
+  private  Task ScanRecursive(FsItem item, string parentPath, Predicate<ScanItem> scanSubtree, bool sync = false)
   {
-    if (!sync)
-      await RunTask(() => { }); // HACK: FORCE YIELD to scheduler
-
     var scanObject = parentPath + item.Name;
     if (scanObject[^1] != Path.DirectorySeparatorChar) scanObject += Path.DirectorySeparatorChar;
 
@@ -36,7 +33,7 @@ public class WindowsFilesScanner : IFilesScanner
 
     item.Items = _scanner.Scan(scanObject);
     if (item.Items == null)
-      return; //Access to directory denied
+      return Task.CompletedTask; //Access to directory denied
 
     var tasks = new List<Task>();
     for (var i = item.Items.Count - 1; i >= 0; i--)
@@ -56,11 +53,11 @@ public class WindowsFilesScanner : IFilesScanner
         else
         {
           /* attached to parent */
-          tasks.Add(ScanRecursive(child, scanObject, scanSubtree, sync));
+          tasks.Add(_taskFactory.StartNew(() => ScanRecursive(child, scanObject, scanSubtree, sync)));
         }
       }
     }
-    await Task.WhenAll(tasks.ToArray());
+    return Task.WhenAll(tasks.ToArray());
   }
 
   private Task RunTask(Action function)
