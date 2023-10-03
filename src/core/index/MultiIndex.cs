@@ -7,6 +7,8 @@ namespace core;
 public class MultiIndex
 {
   private readonly List<IndexReader> _indices = new();
+  
+  public int ICount => _indices.Count;
 
   public MultiIndex(Lifetime lt, string path)
   {

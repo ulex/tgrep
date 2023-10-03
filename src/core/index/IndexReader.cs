@@ -1,4 +1,5 @@
 ﻿using System.Buffers;
+using System.Runtime.InteropServices;
 using System.Text;
 using core.util;
 using JetBrains.Diagnostics;
@@ -11,13 +12,13 @@ public class IndexReader
 {
   private readonly Lazy<Dictionary<string, DocNode>> _byPathLookup;
   private readonly Stream _indexStream;
-  private readonly Dictionary<Trigram, TrigramBlock> _trigramBlocks;
   private readonly Preamble _preamble;
   private readonly long _start;
+  private byte[] _trigramSchema;
+
+  private int TrigramCount => (_trigramSchema.Length - 16) / 12;
 
   public Dictionary<string, DocNode> PathLookup => _byPathLookup.Value;
-
-  public IReadOnlyDictionary<Trigram, TrigramBlock> TrigramBlocks => _trigramBlocks;
 
   public unsafe IndexReader(Stream indexStream)
   {
@@ -28,21 +29,17 @@ public class IndexReader
 
     _indexStream.Position = _start + _preamble.TrigramIndexOffset;
     var trigramLength = (int)(_preamble.Length - _preamble.TrigramIndexOffset);
-    var buf = ArrayPool<byte>.Shared.Rent(trigramLength);
-    _indexStream.Read(buf, 0, trigramLength);
-    fixed (byte* f = buf)
-    {
-      var ur = UnsafeReader.CreateReader(f, trigramLength);
-      _trigramBlocks = ReadTrigramBlocks(ur);
-    }
-    ArrayPool<byte>.Shared.Return(buf);
+    _trigramSchema = new byte[trigramLength];
+    _indexStream.Read(_trigramSchema, 0, trigramLength);
   }
 
   public IEnumerable<(Trigram trigram, IReadOnlyCollection<int> docIds)> ReadAllPostingLists()
   {
-    foreach (var kvp in TrigramBlocks.OrderBy(b => b.Value.Offset))
+    var c = TrigramCount;
+    for (int i = 0; i < c; i++)
     {
-      yield return (kvp.Key, ReadBlock(kvp.Value));
+      var val = ReadTrigramBlock(i);
+      yield return (val.Val, ReadDocumentIds(val));
     }
   }
 
@@ -176,7 +173,7 @@ public class IndexReader
     {
       var trigrams = new List<Trigram>();
       var hash = Utils.HashChar(str[0]);
-      foreach (var t in TrigramBlocks.Keys)
+      foreach (var t in ReadAllTrigrams())
       {
         if (t.A == hash || t.B == hash || t.C == hash)
           trigrams.Add(t);
@@ -187,7 +184,7 @@ public class IndexReader
     {
       var trigrams = new List<Trigram>();
       var p = Utils.HashChar(str[0]) << 8 & Utils.HashChar(str[1]);
-      foreach (var t in TrigramBlocks.Keys)
+      foreach (var t in ReadAllTrigrams())
       {
         if (((t.Val >> 8) == p) || ((t.Val & 0x00FFFF) == p))
         {
@@ -224,19 +221,68 @@ public class IndexReader
 
   private IReadOnlyCollection<int> GetDocumentsIds(Trigram trigram)
   {
-    if (_trigramBlocks.TryGetValue(trigram, out var block))
+    var block = TryFindTrigramBlock(trigram);
+    if (block.HasValue)
     {
-      return ReadBlock(block);
+      return ReadDocumentIds(block.Value);
     }
 
     return EmptyArray<int>.Instance;
   }
 
-  private IReadOnlyCollection<int> ReadBlock(TrigramBlock block)
+  private TrigramBlock? TryFindTrigramBlock(Trigram trigram)
+  {
+    int left = 0;
+    int right = TrigramCount - 1;
+
+    while (left <= right)
+    {
+      int middle = left + (right - left) / 2;
+
+      var (middleT, _) = ReadTrigram(middle);
+      if (middleT == trigram)
+        return ReadTrigramBlock(middle);
+
+      if (middleT.Val < trigram.Val)
+        left = middle + 1;
+      else
+        right = middle - 1;
+    }
+    return default;
+  }
+
+  private TrigramBlock ReadTrigramBlock(int index)
+  {
+    var val = ReadTrigram(index);
+    var next = ReadTrigram(index + 1);
+    return new TrigramBlock(val.Value, val.Offset, (int)(next.Offset - val.Offset));
+  }
+
+  private (Trigram Value, long Offset) ReadTrigram(int index)
+  {
+    var span = _trigramSchema.AsSpan(4 + index * 12, 12);
+    return (new Trigram(MemoryMarshal.Read<int>(span[..4])), MemoryMarshal.Read<long>(span[4..]));
+  }
+
+  private Trigram ReadTrigramOnly(int index)
+  {
+    return new Trigram(MemoryMarshal.Read<int>(_trigramSchema.AsSpan(4 + index * 12, 4)));
+  }
+
+  private IEnumerable<Trigram> ReadAllTrigrams()
+  {
+    var c = TrigramCount;
+    for (int i = 0; i < c; i++)
+    {
+      yield return ReadTrigram(i).Value;
+    }
+  }
+
+  private IReadOnlyCollection<int> ReadDocumentIds(TrigramBlock block)
   {
     var result = new List<int>(block.Length);
     
-    _indexStream.Position = block.Offset + _start;
+    _indexStream.Position = block.Offset + _start + _preamble.PostingListOffset;
     var bytes = ArrayPool<byte>.Shared.Rent(block.Length);
     _indexStream.ReadExactly(bytes, 0, block.Length);
 
@@ -264,28 +310,5 @@ public class IndexReader
       lookup.Add(docNode.Path, docNode);
 
     return lookup;*/
-  }
-
-  private static Dictionary<Trigram, TrigramBlock> ReadTrigramBlocks(UnsafeReader reader)
-  {
-    var bc = reader.ReadVarint();
-    var trigramBlocks = new Dictionary<Trigram, TrigramBlock>(bc, Trigram.ValComparer);
-    long offset = Preamble.Sizeof;
-    int prev = 0;
-    for (int i = 0; i < bc; i++)
-    {
-      int trigram = prev + reader.ReadVarint();
-      prev = trigram;
-      var length = reader.ReadUVarint();
-      trigramBlocks.Add(new Trigram(trigram), new TrigramBlock(offset, (int)length));
-      offset += length;
-    }
-
-    if (reader.ReadVarint() != 0)
-    {
-      throw new Exception("End marker is missing in trigram index block. index is corrupted");
-    }
-
-    return trigramBlocks;
   }
 }

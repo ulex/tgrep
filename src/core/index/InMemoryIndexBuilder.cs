@@ -27,12 +27,12 @@ The file with index may contains one or many indexes in the following format:
       [4] UInt32 offset to path in strings table. UInt32.MaxValue = file is removed
       [8] UInt64 file modification stamp
     last fake document with modificationStamp = 0xFEEDFEEDFEEDFEED and Offset to the single-byte-zero in strings table
-3.3 Trigram Index. A schema for postings  list.
-   VarInt32 block count = bc. negative and greater than 0xFF00 values ares used to detect corrupted index.
-   *bc blocks:
-      VarInt32 delta-encoded trigram
-      VarInt32 Length of block
-   a single-byte zero, to check for index corruption
+3.3 [16+12*bc] Trigrams. An index for postings list.
+   [4] Int32 block count = bc. negative and greater than 0xFF00 values ares used to detect corrupted index.
+   [12]*bc blocks:
+      [4] Int32 trigram
+      [8] U64 offset in the posting lists (relative to posting lists start, e.g. minimal value is 0)
+   [12] last fake block with trigram = 0 and offset to to last byte + 1 of posting lists section)
 */
 public class InMemoryIndexBuilder
 {
@@ -181,16 +181,18 @@ public class InMemoryIndexBuilder
 
       // Trigram address table
       long trigramIndexOffset = writer.BaseStream.Position;
-      writer.WriteVarint(offsetBlocks.Count);
-      int prevT = 0;
+      writer.Write(offsetBlocks.Count);
+      long offset = 0;
       foreach (var ob in offsetBlocks)
       {
-        writer.WriteVarint(ob.Trigram - prevT);
-        writer.WriteVarint(ob.Length);
-        prevT = ob.Trigram;
+        writer.Write(ob.Trigram);
+        writer.Write(offset);
+        offset += ob.Length;
       }
-      writer.Write((byte)0);
-
+      // fake block
+      writer.Write(0);
+      writer.Write(offset);
+      
 
       var totalLength = writer.BaseStream.Position;
       writer.BaseStream.Position = 0;

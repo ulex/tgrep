@@ -1,8 +1,6 @@
-﻿using System.Runtime.InteropServices;
+﻿namespace core;
 
-namespace core;
-
-[StructLayout(LayoutKind.Sequential, Size = sizeof(int))]
+/// todo: what is performance overhead of wrapped int?
 public readonly record struct Trigram(int Val)
 {
   public Trigram(byte a, byte b, byte c) : this(a << 16 | b << 8 | c)

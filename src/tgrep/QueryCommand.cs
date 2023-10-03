@@ -22,9 +22,9 @@ public class QueryCommand
     _searchInFiles = searchInFiles;
     _ignoreCase = ignoreCase;
     _directory = Directory.GetCurrentDirectory();
+    var watch = Stopwatch.StartNew();
     if (!File.Exists(indexPath))
     {
-      var watch = Stopwatch.StartNew();
       Console.Error.WriteLine($"Indexing directory... {_directory}");
       Console.Error.WriteLine($"     index location : {indexPath}");
       int n = 0;
@@ -73,6 +73,7 @@ public class QueryCommand
       File.Delete(indexPath);
       throw;
     }
+    Console.Error.WriteLine($"Index opened in {watch.Elapsed}, ICount = {_multiIndex.ICount}");
   }
 
   public void Start(string query, VimgrepPrinter printer, bool useGitIgnore)

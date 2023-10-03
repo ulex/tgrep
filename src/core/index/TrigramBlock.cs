@@ -1,5 +1,6 @@
 ﻿namespace core;
 
-public record TrigramBlock(
-  long Offset,
+public record struct TrigramBlock(
+  Trigram Val,
+  long Offset /* relative to posting lists start (e.g. can be 0)*/,
   int Length);

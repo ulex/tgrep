@@ -19,6 +19,8 @@ public struct Preamble
   /** including ending EOF document   */
   public readonly int DocumentsCount => (int)(TrigramIndexOffset - DocumentsTableOffset) / DocRow.Sizeof;
 
+  public long PostingListOffset => Sizeof;
+
   public Preamble(int formatVersion, long stringsOffset, long trigramIndexOffset, long documentsTableOffset, long length)
   {
     FormatVersion = formatVersion;
