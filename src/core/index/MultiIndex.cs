@@ -41,20 +41,20 @@ public class MultiIndex
 
     return ranges;
   }
-  public IEnumerable<DocNode> ContainingStr(string str)
+  public IEnumerable<DocNode> ContainingStr(string str, bool caseSensitive)
   {
     foreach (IndexReader ind in _indices)
-    foreach (DocNode node in ind.ContainingStr(str)!)
+    foreach (DocNode node in ind.ContainingStr(str, caseSensitive)!)
       yield return node;
   }
 
   /// sorry, hackathon naming scheme
-  public IndexState CreateIndexStateForQuery(string query)
+  public IndexState CreateIndexStateForQuery(string query, bool caseSensitive)
   {
     static PathAndStamp Convert(DocNode n) => new(n.Path, n.LastWriteTime);
 
     var allNodes = new HashSet<PathAndStamp>(_indices.SelectMany(i => i.ReadAllDocNodes()).Select(Convert));
-    var queryNodes = new HashSet<PathAndStamp>(ContainingStr(query).Select(Convert));
+    var queryNodes = new HashSet<PathAndStamp>(ContainingStr(query, caseSensitive).Select(Convert));
     return new IndexState(allNodes, queryNodes);
   }
 

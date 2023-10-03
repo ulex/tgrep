@@ -1,4 +1,5 @@
 ﻿using System.Buffers;
+using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text;
 using core.util;
@@ -162,17 +163,21 @@ public class IndexReader
     throw new ArgumentOutOfRangeException(nameof(query));
   }
 
-  public IReadOnlyCollection<DocNode> ContainingStr(string str)
+  public IReadOnlyCollection<DocNode> ContainingStr(string str, bool caseSensitive)
   {
-    if (string.IsNullOrEmpty(str))
+    var runes = str.EnumerateRunes().ToArray();
+    
+    if (runes.Length == 0)
     {
       return ReadAllDocNodes();
     }
     Query? query = null;
-    if (str.Length == 1)
+
+    if (runes.Length == 1)
     {
+      // TODO: case-insensitive wildcard search
       var trigrams = new List<Trigram>();
-      var hash = Utils.HashChar(str[0]);
+      var hash = Utils.HashChar(runes[0].Value);
       foreach (var t in ReadAllTrigrams())
       {
         if (t.A == hash || t.B == hash || t.C == hash)
@@ -180,10 +185,11 @@ public class IndexReader
       }
       return EvaluateWildcard(trigrams);
     }
-    else if (str.Length == 2)
+    else if (runes.Length == 2)
     {
+      // TODO: case-insensitive wildcard search
       var trigrams = new List<Trigram>();
-      var p = Utils.HashChar(str[0]) << 8 & Utils.HashChar(str[1]);
+      var p = Utils.HashChar(runes[0].Value) << 8 & Utils.HashChar(runes[1].Value);
       foreach (var t in ReadAllTrigrams())
       {
         if (((t.Val >> 8) == p) || ((t.Val & 0x00FFFF) == p))
@@ -195,18 +201,42 @@ public class IndexReader
     }
     else
     {
-      for (int i = 0; i < str.Length - 2; i++)
+      for (int i = 0; i < runes.Length - 2; i++)
       {
-        var trigram = new Trigram(Utils.HashChar(str[i]), Utils.HashChar(str[i + 1]), Utils.HashChar(str[i + 2]));
-        if (query == null)
-          query = new Query.Contains(trigram);
-        else
-          query = new Query.And(query, new Query.Contains(trigram));
+        query = CreateQuery(caseSensitive, runes[i], runes[i + 1], runes[i + 2]);
       }
     }
 
     return Evaluate(query!);
   }
+
+  private Query CreateQuery(bool ignoreCase, Rune a, Rune b, Rune c)
+  {
+    var trigram = new Trigram(Utils.HashChar(a.Value), Utils.HashChar(b.Value), Utils.HashChar(c.Value));
+    Query query = new Query.Contains(trigram);
+
+    if (ignoreCase)
+    {
+      foreach (var t in VaryCase(a, b, c).Except(new[] { trigram }))
+      {
+        query = new Query.Or(query, new Query.Contains(t));
+      }
+    }
+
+    return query;
+  }
+
+  private IEnumerable<Trigram> VaryCase(Rune a, Rune b, Rune c)
+  {
+    var cul = CultureInfo.CurrentCulture;
+    return Enumerable.Range(0, 8).Select(i =>
+      new Trigram(
+        Utils.HashChar(((i & 0b001) != 0 ? Rune.ToLower(a, cul) : Rune.ToUpper(a, cul)).Value),
+        Utils.HashChar(((i & 0b010) != 0 ? Rune.ToLower(b, cul) : Rune.ToUpper(b, cul)).Value),
+        Utils.HashChar(((i & 0b100) != 0 ? Rune.ToLower(c, cul) : Rune.ToUpper(c, cul)).Value)
+    )).Distinct();
+  }
+
 
   private IReadOnlyCollection<DocNode> EvaluateWildcard(List<Trigram> trigrams)
   {

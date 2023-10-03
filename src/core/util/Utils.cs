@@ -1,5 +1,6 @@
 ﻿using System.Buffers;
 using System.Runtime.CompilerServices;
+using System.Text;
 using JetBrains.Annotations;
 using JetBrains.Serialization;
 
@@ -33,19 +34,32 @@ public static class Utils
   {
     var m = new TrigramCollector();
 
-    var reader = new StreamReader(path);
-    var pool = ArrayPool<char>.Shared;
-    var chars = pool.Rent(4096);
-      int c;
-    while ((c = reader.ReadBlock(chars, 0, chars.Length)) > 0)
+    const int fileBufSize = 4096;
+    const int bufSize =  + 4;
+    var fileStream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, fileBufSize);
+    var reader = new StreamReader(fileStream);
+    reader.Peek(); // detect file encoding
+
+    // possible optimization, todo: proper bom handle
+    // if (Equals(reader.CurrentEncoding, Encoding.UTF8))
+    // {
+    //   fileStream.Position = 0;
+    //   while (Rune.DecodeFromUtf16(span, out Rune rune, out int charsConsumed) == OperationStatus.Done)
+    //   {
+    //     if (Rune.IsLetterOrDigit(rune))
+    //     { break; }
+    //     span = span[charsConsumed..];
+    //   }
+    // }
+    var fileContent = reader.ReadToEnd();// todo: traffic/memory usage
+    foreach (var rune in fileContent.EnumerateRunes())
     {
-      if (!m.Feed(chars.AsSpan(0, c)))
+      if (!m.Feed(rune.Value))
       {
         m.Trigrams.Clear();
         break;
       }
     }
-    pool.Return(chars);
 
     return m.Trigrams;
   }
@@ -55,7 +69,6 @@ public static class Utils
     public readonly HashSet<int> Trigrams = new(); // todo: sparse set
 
     private long _position = 0;
-    private int _ti = 0;
     private int _tc = 0;
 
     public TrigramCollector()
@@ -63,34 +76,32 @@ public static class Utils
     }
 
     /// <summary>
-    /// feed chars. In case of zero (=probably binary file) returns false
+    /// feed unicode code points. In case of zero (=probably binary file) returns false
     /// </summary>
     [MustUseReturnValue]
-    public bool Feed(Span<char> r)
+    public bool Feed(int codePoint)
     {
-      if (r.Length > 2 && _position == 0)
+      if (_position > 2)
       {
-        _tc = HashChar(r[0]) << 8;
-        _tc |= HashChar(r[1]);
-        
-        _ti = HashChar(char.ToUpperInvariant(r[0])) << 8;
-        _ti |= HashChar(char.ToUpperInvariant(r[1]));
-      }
-
-      for (int i = _position == 0 ? 2 : 0; i < r.Length; i++)
-      {
-        _tc = (_tc << 8 | HashChar(r[i])) & 0x00FFFFFF;
-        _ti = (_ti << 8 | HashChar(char.ToUpperInvariant(r[i]))) & 0x00FFFFFF;
-        if (Trigrams.Add(_tc) | Trigrams.Add(_ti)) // NOTE: Intentially use non-lazy OR to evaluate both branches in any case
+        _tc = (_tc << 8 | HashChar(codePoint)) & 0x00FFFFFF;
+        if (Trigrams.Add(_tc))
         {
-          if (r[i] == 0)
+          if (codePoint == 0)
           {
             return false;
           }
         }
       }
+      else if (_position == 0)
+      {
+        _tc |= HashChar(codePoint);
+      }
+      else if (_position == 1)
+      {
+        _tc = HashChar(codePoint) << 8;
+      }
 
-      _position += r.Length;
+      _position++;
       return true;
     }
   }
@@ -156,8 +167,9 @@ public static class Utils
   }
 
   [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
-  public static byte HashChar(char b)
+  public static byte HashChar(int codePoint)
   {
-    return (byte)(b & 0xFF ^ (b >> 8));
+    // todo: proper hash function
+    return unchecked((byte)(codePoint ^ (codePoint >> 8) ^ (codePoint >> 16)));
   }
 }

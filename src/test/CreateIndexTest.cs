@@ -44,7 +44,7 @@ public class CreateIndexTest
     builder.SaveTo(storage);
     storage.Position = 0;
     var reader = new IndexReader(storage);
-    Assert.True(reader.ContainingStr("TEST")!.Count > 0);
+    Assert.True(reader.ContainingStr("TEST", false)!.Count > 0);
   }
 
   [TestCase("C:\\work\\rd")]
@@ -71,7 +71,7 @@ public class CreateIndexTest
     using (var def = new LifetimeDefinition())
     {
       var i = new MultiIndex(def.Lifetime, "C:\\Users\\sa\\AppData\\Roaming\\.tgrep\\rd.bb9bb23d");
-      var indexState = i.CreateIndexStateForQuery("DotPeek");
+      var indexState = i.CreateIndexStateForQuery("DotPeek", false);
     }
   }
 }

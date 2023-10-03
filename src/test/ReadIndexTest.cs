@@ -19,7 +19,7 @@ public class ReadIndexTest
     Console.WriteLine($"Read index: {sw.ElapsedMilliseconds:D}ms");
 
     sw.Restart();
-    var documents = index.ContainingStr("TestFixture");
+    var documents = index.ContainingStr("TestFixture", true);
     sw.Stop();
     Console.WriteLine($"Query index: {sw.ElapsedMilliseconds:D}ms");
     foreach (var docNode in documents)

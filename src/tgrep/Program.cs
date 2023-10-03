@@ -37,7 +37,6 @@ static void RunOptions(Options opts)
   if (opts.Query != null)
   {
     var ignoreCase = opts.IgnoreCase || (opts.SmartCase && !opts.Query.Any(char.IsUpper));
-    var query = ignoreCase ? opts.Query.ToUpper() : opts.Query;
 
     using var def = new LifetimeDefinition();
     var currentDirectory = Directory.GetCurrentDirectory();
@@ -46,11 +45,11 @@ static void RunOptions(Options opts)
     var cmd = new QueryCommand(def.Lifetime, indexPath, printer, searchInFiles: !opts.OnlyOutputFiles, ignoreCase);
     if (opts.IndexOnly)
     {
-      cmd.PrintIndexOnly(query, printer);
+      cmd.PrintIndexOnly(opts.Query, printer);
     }
     else
     {
-      cmd.Start(query, printer, useGitIgnore: !opts.SearchAllFiles);
+      cmd.Start(opts.Query, printer, useGitIgnore: !opts.SearchAllFiles);
     }
   }
 }

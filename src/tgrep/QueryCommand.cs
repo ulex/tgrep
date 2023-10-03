@@ -78,7 +78,7 @@ public class QueryCommand
 
   public void Start(string query, VimgrepPrinter printer, bool useGitIgnore)
   {
-    var state = _multiIndex.CreateIndexStateForQuery(query);
+    var state = _multiIndex.CreateIndexStateForQuery(query, !_ignoreCase);
     FileScannerBuilder.Build(_directory, useGitIgnore: useGitIgnore).Visit(i =>
     {
       if (i.IsDirectory)
@@ -110,7 +110,7 @@ public class QueryCommand
 
   public void PrintIndexOnly(string query, VimgrepPrinter printer)
   {
-    foreach (var docNode in _multiIndex.ContainingStr(query))
+    foreach (var docNode in _multiIndex.ContainingStr(query, !_ignoreCase))
     {
       if (!_searchInFiles)
       {
@@ -164,12 +164,12 @@ public class QueryCommand
     while (true)
     {
       int matchIndex;
-      if (bufStr != null)
+      if (bufStr != null) // if ignore case
       {
         matchIndex = bufStr.IndexOf(query, offset, StringComparison.OrdinalIgnoreCase);
         offset = matchIndex;
       }
-      else
+      else // case-sensitive search
       {
         matchIndex = bufferSpan[offset..].IndexOf(query);
         offset += matchIndex;
