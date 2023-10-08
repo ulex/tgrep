@@ -118,8 +118,6 @@ public class InMemoryIndexBuilder
 
   public void SaveTo(Stream stream)
   {
-    if (stream.Position != 0)
-      stream = new HackPositionStream(stream);
     lock (_documents)
     {
       EnsureDocumentsSorted();
@@ -143,9 +141,10 @@ public class InMemoryIndexBuilder
         }
       }
 
-      var writer = new BinaryWriter(stream);
+      long indexStartOffset = stream.Position;
+      var output = new BufferedStream(stream);
       // write fake preamble just to reserve length
-      default(Preamble).WriteTo(writer);
+      default(Preamble).WriteTo(output);
 
       var offsetBlocks = new List<TrigramOffsetBlock>(0xFF00);
       // writing inverted documents index itself
@@ -155,7 +154,7 @@ public class InMemoryIndexBuilder
         if (docIds != null)
         {
           docIds.Sort();
-          long startOffset = writer.BaseStream.Position;
+          long startOffset = output.Position;
           int prev = 0;
           foreach (var docId in docIds)
           {
@@ -164,23 +163,24 @@ public class InMemoryIndexBuilder
             var newDocId = lookup[docId];
             Assertion.Assert(newDocId < _documents.Count);
     
-            writer.WriteVarint(newDocId - prev);
+            output.WriteVarint(newDocId - prev);
             prev = newDocId;
           }
 
-          int length = (int)(writer.BaseStream.Position - startOffset);
-          offsetBlocks.Add(new TrigramOffsetBlock(i, startOffset, length));
+          int length = (int)(output.Position - startOffset);
+          offsetBlocks.Add(new TrigramOffsetBlock(i, length));
         }
       }
 
       // Writing metadata part
-      long stringsTableOffset = writer.BaseStream.Position;
+      long stringsTableOffset = output.Position - indexStartOffset;
 
       // Document paths, id + stamps
-      var docTableOffset = WriteDocuments(writer, sortedDocs);
+      var docTableOffset =  WriteDocuments(output, sortedDocs) - indexStartOffset;
 
       // Trigram address table
-      long trigramIndexOffset = writer.BaseStream.Position;
+      var writer = new BinaryWriter(output, Encoding.Default, true);
+      long trigramIndexOffset = output.Position - indexStartOffset;
       writer.Write(offsetBlocks.Count);
       long offset = 0;
       foreach (var ob in offsetBlocks)
@@ -194,10 +194,11 @@ public class InMemoryIndexBuilder
       writer.Write(offset);
       
 
-      var totalLength = writer.BaseStream.Position;
-      writer.BaseStream.Position = 0;
-      new Preamble(1, stringsTableOffset, trigramIndexOffset, docTableOffset, totalLength).WriteTo(writer);
-      writer.BaseStream.Position = totalLength;
+      var totalLength = output.Position - indexStartOffset;
+      output.Position = indexStartOffset;
+      new Preamble(1, stringsTableOffset, trigramIndexOffset, docTableOffset, totalLength).WriteTo(output);
+      output.Position = indexStartOffset + totalLength;
+      output.Flush();
     }
   }
 
@@ -217,9 +218,9 @@ public class InMemoryIndexBuilder
   /// <summary>
   /// Writes strings blob and documents table
   /// </summary>
-  private long WriteDocuments(BinaryWriter writer, List<DocNode> documents)
+  private long WriteDocuments(Stream writer, List<DocNode> documents)
   {
-    var start = writer.BaseStream.Position;
+    var start = writer.Position;
     long prev = start;
     var docRows = new List<DocRow>(documents.Count);
     foreach (var file in documents)
@@ -228,17 +229,18 @@ public class InMemoryIndexBuilder
       writer.Write(bytes);
 
       docRows.Add(new DocRow((uint)(prev - start), file.LastWriteTime));
-      prev = writer.BaseStream.Position;
+      prev = writer.Position;
     }
 
     // fake document
     docRows.Add(new DocRow((uint)(prev - start), 0x0EEDFEEDFEEDFEED));
 
-    long documentTableOffset = writer.BaseStream.Position;
+    long documentTableOffset = writer.Position;
     foreach (var docRow in docRows)
     {
-      writer.Write(docRow.PathOffset);
-      writer.Write(docRow.ModificationStamp);
+      var row = docRow;
+      var bytes = MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(ref row, 1));
+      writer.Write(bytes);
     }
     writer.WriteVarint(0);
 

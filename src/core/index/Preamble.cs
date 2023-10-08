@@ -30,11 +30,10 @@ public struct Preamble
     Length = length;
   }
 
-  public unsafe void WriteTo(BinaryWriter writer)
+  public unsafe void WriteTo(Stream writer)
   {
-    byte[] buffer = new byte[Marshal.SizeOf(typeof(Preamble))];
-    fixed (byte* b = buffer)
-      Marshal.StructureToPtr(this, (IntPtr)b, false);
+    Span<byte> buffer = stackalloc byte[Marshal.SizeOf(typeof(Preamble))];
+    MemoryMarshal.Write(buffer, ref this);
       
     writer.Write(magic);
     writer.Write(buffer);

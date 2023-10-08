@@ -83,7 +83,7 @@ public static class Utils
     {
       if (_position > 2)
       {
-        _tc = (_tc << 8 | HashChar(codePoint)) & 0x00FFFFFF;
+        _tc = (_tc << 8 | HashCodepoint(codePoint)) & 0x00FFFFFF;
         if (Trigrams.Add(_tc))
         {
           if (codePoint == 0)
@@ -94,11 +94,11 @@ public static class Utils
       }
       else if (_position == 0)
       {
-        _tc |= HashChar(codePoint);
+        _tc |= HashCodepoint(codePoint);
       }
       else if (_position == 1)
       {
-        _tc = HashChar(codePoint) << 8;
+        _tc = HashCodepoint(codePoint) << 8;
       }
 
       _position++;
@@ -149,25 +149,25 @@ public static class Utils
     return result;
   }
 
-  public static void WriteVarint(this BinaryWriter writer, int value)
+  public static void WriteVarint(this Stream writer, int value)
   {
     while (value >= 0x80)
     {
-      writer.Write((byte)(value | 0x80));
+      writer.WriteByte((byte)(value | 0x80));
       value >>= 7;
     }
 
-    writer.Write((byte)value);
+    writer.WriteByte((byte)value);
   }
 
-  public static void WriteZigZagVarint(this BinaryWriter writer, int value)
+  public static void WriteZigZagVarint(this Stream writer, int value)
   {
     int zigZagEncoded = ((value << 1) ^ (value >> 31));
     WriteVarint(writer, zigZagEncoded);
   }
 
   [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
-  public static byte HashChar(int codePoint)
+  public static byte HashCodepoint(int codePoint)
   {
     // todo: proper hash function
     return unchecked((byte)(codePoint ^ (codePoint >> 8) ^ (codePoint >> 16)));

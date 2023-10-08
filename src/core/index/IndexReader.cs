@@ -167,7 +167,7 @@ public class IndexReader
     {
       // TODO: case-insensitive wildcard search
       var trigrams = new List<Trigram>();
-      var hash = Utils.HashChar(runes[0].Value);
+      var hash = Utils.HashCodepoint(runes[0].Value);
       foreach (var t in ReadAllTrigrams())
       {
         if (t.A == hash || t.B == hash || t.C == hash)
@@ -179,7 +179,7 @@ public class IndexReader
     {
       // TODO: case-insensitive wildcard search
       var trigrams = new List<Trigram>();
-      var p = Utils.HashChar(runes[0].Value) << 8 & Utils.HashChar(runes[1].Value);
+      var p = Utils.HashCodepoint(runes[0].Value) << 8 & Utils.HashCodepoint(runes[1].Value);
       foreach (var t in ReadAllTrigrams())
       {
         if (((t.Val >> 8) == p) || ((t.Val & 0x00FFFF) == p))
@@ -206,7 +206,7 @@ public class IndexReader
 
   private Query CreateQuery(bool ignoreCase, Rune a, Rune b, Rune c)
   {
-    var trigram = new Trigram(Utils.HashChar(a.Value), Utils.HashChar(b.Value), Utils.HashChar(c.Value));
+    var trigram = new Trigram(Utils.HashCodepoint(a.Value), Utils.HashCodepoint(b.Value), Utils.HashCodepoint(c.Value));
     Query query = new Query.Contains(trigram);
 
     if (ignoreCase)
@@ -225,9 +225,9 @@ public class IndexReader
     var cul = CultureInfo.CurrentCulture;
     return Enumerable.Range(0, 8).Select(i =>
       new Trigram(
-        Utils.HashChar(((i & 0b001) != 0 ? Rune.ToLower(a, cul) : Rune.ToUpper(a, cul)).Value),
-        Utils.HashChar(((i & 0b010) != 0 ? Rune.ToLower(b, cul) : Rune.ToUpper(b, cul)).Value),
-        Utils.HashChar(((i & 0b100) != 0 ? Rune.ToLower(c, cul) : Rune.ToUpper(c, cul)).Value)
+        Utils.HashCodepoint(((i & 0b001) != 0 ? Rune.ToLower(a, cul) : Rune.ToUpper(a, cul)).Value),
+        Utils.HashCodepoint(((i & 0b010) != 0 ? Rune.ToLower(b, cul) : Rune.ToUpper(b, cul)).Value),
+        Utils.HashCodepoint(((i & 0b100) != 0 ? Rune.ToLower(c, cul) : Rune.ToUpper(c, cul)).Value)
     )).Distinct();
   }
 
