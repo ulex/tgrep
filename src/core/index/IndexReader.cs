@@ -4,34 +4,29 @@ using System.Runtime.InteropServices;
 using System.Text;
 using core.util;
 using JetBrains.Diagnostics;
-using JetBrains.Serialization;
 using JetBrains.Util;
 
 namespace core;
 
 public class IndexReader
 {
-  private readonly Lazy<Dictionary<string, DocNode>> _byPathLookup;
   private readonly Stream _indexStream;
   private readonly Preamble _preamble;
   private readonly long _start;
-  private byte[] _trigramSchema;
+  private readonly byte[] _trigramSchema;
 
   private int TrigramCount => (_trigramSchema.Length - 16) / 12;
 
-  public Dictionary<string, DocNode> PathLookup => _byPathLookup.Value;
-
-  public unsafe IndexReader(Stream indexStream)
+  public IndexReader(Stream indexStream)
   {
     _start = indexStream.Position;
-    _byPathLookup = new(CreateByPathLookup); // lazy, not always needed
     _indexStream = indexStream;
     _preamble = Preamble.Read(_indexStream);
 
     _indexStream.Position = _start + _preamble.TrigramIndexOffset;
     var trigramLength = (int)(_preamble.Length - _preamble.TrigramIndexOffset);
     _trigramSchema = new byte[trigramLength];
-    _indexStream.Read(_trigramSchema, 0, trigramLength);
+    _indexStream.ReadExactly(_trigramSchema, 0, trigramLength);
   }
 
   public IEnumerable<(Trigram trigram, IReadOnlyCollection<int> docIds)> ReadAllPostingLists()
@@ -40,7 +35,7 @@ public class IndexReader
     for (int i = 0; i < c; i++)
     {
       var val = ReadTrigramBlock(i);
-      yield return (val.Val, ReadDocumentIds(val));
+      yield return (val.Val, ReadDocumentIds(val, x => new int[x]));
     }
   }
 
@@ -57,11 +52,12 @@ public class IndexReader
     
   public IReadOnlyCollection<DocNode> Evaluate(Query query)
   {
-    var documentsIds = Evaluate(query, out _);
+    var documentsIds = EvaluateDocIds(query);
     var result = new List<DocNode>(documentsIds.Count);
     foreach (var docId in documentsIds) 
       result.Add(ReadDocNodeById(docId));
-
+    
+    ArrayPool<int>.Shared.Return(documentsIds.Array!);
     return result;
   }
 
@@ -127,37 +123,31 @@ public class IndexReader
     }
   }
 
-  public IReadOnlyCollection<int> Evaluate(Query query, out HashSet<int>? rwResult)
+  /// returns an array segment in rented array! it is better to return it back to SharedArrayPool
+  private ArraySegment<int> EvaluateDocIds(Query query)
   {
+    var pool = ArrayPool<int>.Shared;
     switch (query)
     {
       case Query.And and:
       {
-        var a = Evaluate(and.A, out var rA);
-        var b = Evaluate(and.B, out var rB);
-        var result = rA ?? rB ?? new HashSet<int>(a);
-        if (rA == null && rB != null)
-          result.IntersectWith(a);
-        else 
-          result.IntersectWith(b);
-        rwResult = result;
-        return result;
+        var a = EvaluateDocIds(and.A);
+        var b = EvaluateDocIds(and.B);
+        var r = SortedArrayUtil.Intersect(a, b);
+        pool.Return(b.Array!);
+        return r;
       }
       case Query.Or or:
       {
-        var a = Evaluate(or.A, out var rA);
-        var b = Evaluate(or.B, out var rB);
-        var result = rA ?? rB ?? new HashSet<int>(a);
-        if (rA == null && rB != null)
-          result.UnionWith(a);
-        else 
-          result.UnionWith(b);
-        rwResult = result;
-        return result;
+        var a = EvaluateDocIds(or.A);
+        var b = EvaluateDocIds(or.B);
+        var r = SortedArrayUtil.Union(a, b, pool.Rent(a.Count + b.Count));
+        pool.Return(a.Array!);
+        pool.Return(b.Array!);
+        return r;
       }
       case Query.Contains cq:
-        rwResult = null;
-        return GetDocumentsIds(cq.Val);
+        return GetDocumentsIds(cq.Val, pool.Rent);
     }
 
     throw new ArgumentOutOfRangeException(nameof(query));
@@ -166,7 +156,7 @@ public class IndexReader
   public IReadOnlyCollection<DocNode> ContainingStr(string str, bool caseSensitive)
   {
     var runes = str.EnumerateRunes().ToArray();
-    
+
     if (runes.Length == 0)
     {
       return ReadAllDocNodes();
@@ -203,7 +193,11 @@ public class IndexReader
     {
       for (int i = 0; i < runes.Length - 2; i++)
       {
-        query = CreateQuery(caseSensitive, runes[i], runes[i + 1], runes[i + 2]);
+        var tQuery = CreateQuery(caseSensitive, runes[i], runes[i + 1], runes[i + 2]);
+        if (query == null)
+          query = tQuery;
+        else
+          query = new Query.And(query, tQuery);
       }
     }
 
@@ -249,12 +243,12 @@ public class IndexReader
     return Evaluate(query1);
   }
 
-  private IReadOnlyCollection<int> GetDocumentsIds(Trigram trigram)
+  private ArraySegment<int> GetDocumentsIds(Trigram trigram, Func<int, int[]> allocator)
   {
     var block = TryFindTrigramBlock(trigram);
     if (block.HasValue)
     {
-      return ReadDocumentIds(block.Value);
+      return ReadDocumentIds(block.Value, allocator);
     }
 
     return EmptyArray<int>.Instance;
@@ -308,37 +302,27 @@ public class IndexReader
     }
   }
 
-  private IReadOnlyCollection<int> ReadDocumentIds(TrigramBlock block)
+  private ArraySegment<int> ReadDocumentIds(TrigramBlock block, Func<int, int[]> allocator)
   {
-    var result = new List<int>(block.Length);
+    var result = allocator(block.Length);
     
     _indexStream.Position = block.Offset + _start + _preamble.PostingListOffset;
     var bytes = ArrayPool<byte>.Shared.Rent(block.Length);
     _indexStream.ReadExactly(bytes, 0, block.Length);
 
+    var i = 0;
     var reader = new BinaryReader(new MemoryStream(bytes, 0, block.Length), Encoding.ASCII);
     int prev = 0;
     while (reader.BaseStream.Position < block.Length)
     {
       var delta = reader.ReadUVarint();
       var val = (int)(delta + prev);
-      result.Add(val);
+      result[i++] = val;
       Assertion.Assert(val < _preamble.DocumentsCount);
       prev = val;
     }
     ArrayPool<byte>.Shared.Return(bytes);
 
-
-    return result;
-  }
-
-  private Dictionary<string, DocNode> CreateByPathLookup()
-  {
-    throw new NotImplementedException();
-    /*var lookup = new Dictionary<string, DocNode>(_docNodes.Count);
-    foreach (var docNode in _docNodes)
-      lookup.Add(docNode.Path, docNode);
-
-    return lookup;*/
+    return new ArraySegment<int>(result, 0, i);
   }
 }
