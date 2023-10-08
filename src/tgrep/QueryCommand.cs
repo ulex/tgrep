@@ -73,7 +73,7 @@ public class QueryCommand
       File.Delete(indexPath);
       throw;
     }
-    Console.Error.WriteLine($"Index opened in {watch.Elapsed}, ICount = {_multiIndex.ICount}");
+    printer.ReportIndexOpen(watch.Elapsed, _multiIndex.ICount);
   }
 
   public void Start(string query, VimgrepPrinter printer, bool useGitIgnore)
@@ -110,27 +110,42 @@ public class QueryCommand
 
   public void PrintIndexOnly(string query, VimgrepPrinter printer)
   {
-    foreach (var docNode in _multiIndex.ContainingStr(query, !_ignoreCase))
-    {
-      if (!_searchInFiles)
+    var sw = Stopwatch.StartNew();
+    var docs = _multiIndex.ContainingStr(query, !_ignoreCase).ToList();
+    printer.ReportQueryIndexTime(sw.Elapsed);
+    
+    sw.Restart();
+    docs
+      .AsParallel()
+      .ForAll(docNode =>
       {
-        _printer.PrintFile(docNode.Path);
-      }
-      else
-      {
-        if (File.Exists(docNode.Path))
+        try
         {
-          SearchInFile(query, docNode.Path, printer);
+          if (!_searchInFiles)
+          {
+            _printer.PrintFile(docNode.Path);
+          }
+          else
+          {
+            if (File.Exists(docNode.Path))
+            {
+              SearchInFile(query, docNode.Path, printer);
+            }
+          }
         }
-      }
-    }
+        catch (Exception e)
+        {
+          Console.Error.WriteLine(e.Message);
+        }
+      });
+    printer.ReportStats(docs.Count, sw.Elapsed);
   }
 
   private void SearchInFile(string query, string path, VimgrepPrinter printer)
   {
     using var fileStream = File.OpenRead(path);
     if (fileStream.Length > int.MaxValue)
-      throw new HackathonException("HKTN: File greater than 2gb are not supported at the moment");
+      throw new HackathonException("HKTN: Files greater than 2gb are not supported at the moment");
 
     var reader = new StreamReader(fileStream);
     
@@ -161,6 +176,7 @@ public class QueryCommand
     int newLine = 0;
     int offset = 0;
 
+    var offsets = new List<int>();
     while (true)
     {
       int matchIndex;
@@ -178,11 +194,11 @@ public class QueryCommand
       if (matchIndex == -1)
         break;
 
-
-      printer.Print(path, offset, bufferSpan);
+      offsets.Add(offset);
 
       offset += query.Length;
     }
-
+    if (offsets.Count > 0)
+      printer.Print(path, offsets, bufferSpan);
   }
 }
