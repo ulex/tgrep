@@ -33,5 +33,5 @@ public class Options
   public string? Query { get; set; }
 
   [Value(1, MetaName = "files")]
-  public IEnumerable<string> Files { get; set; }
+  public IEnumerable<string>? Files { get; set; }
 }

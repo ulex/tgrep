@@ -35,7 +35,7 @@ public class VimgrepPrinter
     }
 
     if (output.Length > 0)
-      Console.WriteLine(output.ToString());
+      Console.Write(output.ToString());
   }
 
   public void PrintFile(string path)

@@ -11,16 +11,15 @@ public class QueryCommand
 {
   private readonly VimgrepPrinter _printer;
   private readonly bool _searchInFiles;
-  private readonly bool _ignoreCase;
 
   private readonly MultiIndex _multiIndex;
   private readonly string _directory;
 
-  public QueryCommand(Lifetime lifetime, string indexPath, VimgrepPrinter printer, bool searchInFiles, bool ignoreCase)
+  public QueryCommand(Lifetime lifetime, string indexPath, VimgrepPrinter printer, bool searchInFiles)
   {
     _printer = printer;
     _searchInFiles = searchInFiles;
-    _ignoreCase = ignoreCase;
+    
     _directory = Directory.GetCurrentDirectory();
     var watch = Stopwatch.StartNew();
     if (!File.Exists(indexPath))
@@ -76,9 +75,9 @@ public class QueryCommand
     printer.ReportIndexOpen(watch.Elapsed, _multiIndex.ICount);
   }
 
-  public void Start(string query, VimgrepPrinter printer, bool useGitIgnore)
+  public void Search(string query, VimgrepPrinter printer, bool useGitIgnore, bool ignoreCase)
   {
-    var state = _multiIndex.CreateIndexStateForQuery(query, !_ignoreCase);
+    var state = _multiIndex.CreateIndexStateForQuery(query, !ignoreCase);
     FileScannerBuilder.Build(_directory, useGitIgnore: useGitIgnore).Visit(i =>
     {
       if (i.IsDirectory)
@@ -96,7 +95,7 @@ public class QueryCommand
         }
         else
         {
-          SearchInFile(query, i.Path, printer);
+          SearchInFile(query, i.Path, printer, ignoreCase);
         }
       }
       catch (Exception e)
@@ -108,10 +107,18 @@ public class QueryCommand
     }).Wait();
   }
 
-  public void PrintIndexOnly(string query, VimgrepPrinter printer)
+  public void ListFilesIndexOnly(VimgrepPrinter printer)
+  {
+    foreach (var path in _multiIndex.ReadPaths())
+    {
+      printer.PrintFile(path);
+    }
+  }
+
+  public void SearchIndexOnly(string query, VimgrepPrinter printer, bool ignoreCase)
   {
     var sw = Stopwatch.StartNew();
-    var docs = _multiIndex.ContainingStr(query, !_ignoreCase).ToList();
+    var docs = _multiIndex.ContainingStr(query, caseSensitive: !ignoreCase).ToList();
     printer.ReportQueryIndexTime(sw.Elapsed);
     
     sw.Restart();
@@ -129,7 +136,7 @@ public class QueryCommand
           {
             if (File.Exists(docNode.Path))
             {
-              SearchInFile(query, docNode.Path, printer);
+              SearchInFile(query, docNode.Path, printer, ignoreCase);
             }
           }
         }
@@ -141,7 +148,7 @@ public class QueryCommand
     printer.ReportStats(docs.Count, sw.Elapsed);
   }
 
-  private void SearchInFile(string query, string path, VimgrepPrinter printer)
+  private void SearchInFile(string query, string path, VimgrepPrinter printer, bool ignoreCase)
   {
     using var fileStream = File.OpenRead(path);
     if (fileStream.Length > int.MaxValue)
@@ -170,7 +177,7 @@ public class QueryCommand
     var bufferSpan = buffer.AsSpan(0, totalRead);
 
     string? bufStr = null;
-    if (_ignoreCase)
+    if (ignoreCase)
       bufStr = new string(bufferSpan);
 
     int newLine = 0;

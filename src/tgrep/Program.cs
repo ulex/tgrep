@@ -1,5 +1,6 @@
 ﻿using CommandLine;
 using core.util;
+using core.util.files;
 using JetBrains.Lifetimes;
 using tgrep;
 
@@ -31,27 +32,54 @@ return parserResult.Value != null ? 0 : 1;
 
 static void RunOptions(Options opts)
 {
-  if (opts.Files.Any())
+  // TODO: streamwriter with buffer!
+  if (opts.Files != null && opts.Files.Any())
     throw new HackathonException("HKTN: Search in specific files isn't supported yet");
+  
+  var currentDirectory = Directory.GetCurrentDirectory();
+  var printer = new VimgrepPrinter(currentDirectory, opts.Verbose);
 
+  if (!opts.IndexOnly && opts.OnlyOutputFiles)
+  {
+    ListFiles(currentDirectory, printer, !opts.SearchAllFiles);
+    return;
+  }
+
+  using var def = new LifetimeDefinition();
+  var indexPath = IndexLocationHelper.GetIndexPath(opts, currentDirectory);
+
+  var cmd = new QueryCommand(def.Lifetime, indexPath, printer, searchInFiles: !opts.OnlyOutputFiles);
   if (opts.Query != null)
   {
     var ignoreCase = opts.IgnoreCase || (opts.SmartCase && !opts.Query.Any(char.IsUpper));
-
-    using var def = new LifetimeDefinition();
-    var currentDirectory = Directory.GetCurrentDirectory();
-    var printer = new VimgrepPrinter(currentDirectory, opts.Verbose);
-    var indexPath = IndexLocationHelper.GetIndexPath(opts, currentDirectory);
-    var cmd = new QueryCommand(def.Lifetime, indexPath, printer, searchInFiles: !opts.OnlyOutputFiles, ignoreCase);
     if (opts.IndexOnly)
     {
-      cmd.PrintIndexOnly(opts.Query, printer);
+      cmd.SearchIndexOnly(opts.Query, printer, ignoreCase);
     }
     else
     {
-      cmd.Start(opts.Query, printer, useGitIgnore: !opts.SearchAllFiles);
+      cmd.Search(opts.Query, printer, useGitIgnore: !opts.SearchAllFiles, ignoreCase: ignoreCase);
     }
   }
+  else if (opts.OnlyOutputFiles && opts.IndexOnly)
+  {
+    cmd.ListFilesIndexOnly(printer);
+  }
+}
+
+static void ListFiles(string directory, VimgrepPrinter printer, bool useGitIgnore)
+{
+  FileScannerBuilder
+    .Build(directory, useGitIgnore: useGitIgnore)
+    .Visit(i =>
+    {
+      if (i.IsDirectory)
+        return true;
+      
+      printer.PrintFile(i.Path);
+
+      return true;
+    }).Wait();
 }
 
 

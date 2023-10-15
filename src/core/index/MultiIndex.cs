@@ -51,11 +51,19 @@ public class MultiIndex
   /// sorry, hackathon naming scheme
   public IndexState CreateIndexStateForQuery(string query, bool caseSensitive)
   {
-    static PathAndStamp Convert(DocNode n) => new(n.Path, n.LastWriteTime);
-
-    var allNodes = new HashSet<PathAndStamp>(_indices.SelectMany(i => i.ReadAllDocNodes()).Select(Convert));
-    var queryNodes = new HashSet<PathAndStamp>(ContainingStr(query, caseSensitive).Select(Convert));
+    var allNodes = GetAllNodes();
+    var queryNodes = new HashSet<PathAndStamp>(ContainingStr(query, caseSensitive).Select(PathAndStamp.FromDocNode));
     return new IndexState(allNodes, queryNodes);
+  }
+
+  public HashSet<PathAndStamp> GetAllNodes()
+  {
+    return new HashSet<PathAndStamp>(_indices.SelectMany(i => i.ReadAllDocNodes()).Select(PathAndStamp.FromDocNode));
+  }
+  
+  public IEnumerable<string> ReadPaths()
+  {
+    return new HashSet<string>(_indices.SelectMany(i => i.ReadAllDocNodes()).Select(n => n.Path), StringComparer.Ordinal);
   }
 
   public record struct IndexRange(long Start, long Length, Preamble Head);
@@ -67,6 +75,7 @@ public class IndexState
   {
     public readonly bool Equals(PathAndStamp other) => string.Equals(Path, other.Path, StringComparison.Ordinal) && ModStamp.Equals(other.ModStamp);
     public readonly override int GetHashCode() => HashCode.Combine(Path, ModStamp);
+    public static PathAndStamp FromDocNode(DocNode n) => new(n.Path, n.LastWriteTime);
   };
   public HashSet<PathAndStamp> AllNodes;
   public HashSet<PathAndStamp> QueryNodes;
