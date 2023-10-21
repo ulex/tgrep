@@ -150,13 +150,15 @@ public class QueryCommand
 
   private void SearchInFile(string query, string path, VimgrepPrinter printer, bool ignoreCase)
   {
+    var sw = Stopwatch.StartNew();
     using var fileStream = File.OpenRead(path);
     if (fileStream.Length > int.MaxValue)
       throw new HackathonException("HKTN: Files greater than 2gb are not supported at the moment");
 
     var reader = new StreamReader(fileStream);
     
-    var buffer = ArrayPool<char>.Shared.Rent((int)fileStream.Length);
+    const int bufferSize = 4096;
+    var buffer = ArrayPool<char>.Shared.Rent((int)fileStream.Length + bufferSize);
     using var x = new LifetimeDefinition();
     x.Lifetime.OnTermination(() => ArrayPool<char>.Shared.Return(buffer));
 
@@ -164,10 +166,11 @@ public class QueryCommand
     int read = 0;
     do
     {
-      var slice = buffer.AsSpan()[totalRead..];
+      var slice = buffer.AsSpan().Slice(totalRead, bufferSize);
       read = reader.ReadBlock(slice);
       if (slice.Slice(0, read).IndexOf('\0') != -1)
       {
+        printer.ReportSearchInFile(path, sw.Elapsed, true);
         return; // binary file!
       }
 
@@ -207,5 +210,7 @@ public class QueryCommand
     }
     if (offsets.Count > 0)
       printer.Print(path, offsets, bufferSpan);
+
+    printer.ReportSearchInFile(path, sw.Elapsed, false);
   }
 }

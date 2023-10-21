@@ -1,5 +1,6 @@
 ﻿using System.Globalization;
 using System.Text;
+using core.util;
 using core.util.files;
 
 namespace tgrep;
@@ -59,5 +60,11 @@ public class VimgrepPrinter
   {
     if (_verbose)
       Console.Error.WriteLine($"Index opened in {elapsed.TotalMilliseconds:N0}ms, ICount = {multiIndexCount}");
+  }
+  
+  public void ReportSearchInFile(string path, TimeSpan elapsed, bool binaryFile)
+  {
+    if (_verbose)
+      Console.Error.WriteLine($"Search in file {path}: {elapsed.TotalMilliseconds:N0}ms, file size={Utils.BytesToString(new FileInfo(path).Length)}");
   }
 }
