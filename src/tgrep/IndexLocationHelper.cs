@@ -5,9 +5,11 @@ namespace tgrep;
 
 public class IndexLocationHelper
 {
+  public const string TgrepIndexPathEnvVar = "TGREP_INDEX_PATH";
+
   public static string GetIndexPath(Options opts, string directory)
   {
-    var indexPath = Environment.GetEnvironmentVariable("TGREP_INDEX_PATH");
+    var indexPath = Environment.GetEnvironmentVariable(TgrepIndexPathEnvVar);
     if (indexPath == null)
       indexPath = opts.IndexPath;
     if (indexPath == null)

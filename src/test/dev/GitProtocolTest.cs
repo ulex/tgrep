@@ -1,6 +1,4 @@
-﻿using System.IO.Pipes;
-
-namespace test;
+﻿namespace test.dev;
 
 /// There was an idea to use git fsmonitor on windows to detect changed files
 /// Following thigs should be checked:

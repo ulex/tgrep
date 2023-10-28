@@ -1,6 +1,6 @@
 ﻿using core.util;
 
-namespace test;
+namespace test.dev;
 
 public class SparseTrigramTest
 {

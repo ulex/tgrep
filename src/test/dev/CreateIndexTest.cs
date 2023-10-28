@@ -1,10 +1,9 @@
 ﻿using core.util;
 using JetBrains.Lifetimes;
-using test;
 
-namespace tests;
+namespace test.dev;
 
-[TestFixture]
+[TestFixture, Explicit]
 public class CreateIndexTest
 {
   [TestCase("C:\\bench\\testwt")]

@@ -1,8 +1,7 @@
 ﻿using System.Diagnostics;
 using JetBrains.Lifetimes;
-using test;
 
-namespace tests;
+namespace test.dev;
 
 public class ReadIndexTest
 {

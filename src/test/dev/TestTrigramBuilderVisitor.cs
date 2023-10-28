@@ -2,7 +2,7 @@
 using core.util.files;
 using JetBrains.Annotations;
 
-namespace test;
+namespace test.dev;
 
 public class TestTrigramBuilderVisitor
 {
