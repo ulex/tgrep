@@ -14,7 +14,7 @@ public class ReadIndexTest
     var sw = Stopwatch.StartNew();
     var tr = new TestTrigramBuilderVisitor(gitdir);
     using var def = new LifetimeDefinition();
-    var index = new MultiIndex(def.Lifetime, tr.OutName(".idx"));
+    var index = MultiIndex.OpenMmap(def.Lifetime, tr.OutName(".idx"));
     sw.Stop();
     Console.WriteLine($"Read index: {sw.ElapsedMilliseconds:D}ms");
 

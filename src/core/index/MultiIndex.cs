@@ -10,7 +10,23 @@ public class MultiIndex
   
   public int ICount => _indices.Count;
 
-  public MultiIndex(Lifetime lt, string path)
+  private MultiIndex(Lifetime lt, Stream stream)
+  {
+    while (stream.Position < stream.Length)
+    {
+      _indices.Add(new IndexReader(stream));
+    }
+  }
+
+  public static MultiIndex OpenFileStream(Lifetime lt, string path)
+  {
+    var fileStream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+    lt.AddDispose(fileStream);
+    return new MultiIndex(lt, fileStream);
+  }
+
+
+  public static MultiIndex OpenMmap(Lifetime lt, string path)
   {
     var fileStream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
     lt.AddDispose(fileStream);
@@ -22,10 +38,7 @@ public class MultiIndex
     Stream mStream = mmap.CreateViewStream(0, mmapLength, MemoryMappedFileAccess.Read);
     lt.AddDispose(mStream);
 
-    while (mStream.Position < mStream.Length)
-    {
-      _indices.Add(new IndexReader(mStream));
-    }
+    return new MultiIndex(lt, mStream);
   }
 
   public static IReadOnlyCollection<IndexRange> ReadStructure(Stream stream)
@@ -67,6 +80,25 @@ public class MultiIndex
   }
 
   public record struct IndexRange(long Start, long Length, Preamble Head);
+
+  public void Dump(TextWriter o, bool verbose)
+  {
+    o.WriteLine($"The multiindex has {_indices.Count} parts");
+    o.WriteLine("## Aggregated stats");
+    var stats = _indices.Select(s => s.Preamble.GetStats()).Aggregate(Preamble.Stats.Default, (a, b) => a + b);
+    o.WriteLine(stats.ToString());
+    o.WriteLine();
+
+    for (var i = 0; i < _indices.Count; i++)
+    {
+      var index = _indices[i];
+      o.WriteLine();
+      o.WriteLine($"Part {i}");
+      o.WriteLine("-------------");
+      index.Dump(o, verbose);
+    }
+    o.WriteLine();
+  }
 }
 
 public class IndexState

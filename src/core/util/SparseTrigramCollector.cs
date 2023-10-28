@@ -2,38 +2,36 @@
 
 namespace core.util;
 
-public struct SparseTrigramCollector
+public class SparseTrigramCollector
 {
-  public readonly HashSet<int> Trigrams = new(); // todo: sparse set
-  
-  private const int WordSize = 8;
-
   private const int WordMask = 0x7;
+  private const int WordSize = WordMask + 1;
 
-  private int[] codePoints = new int[WordSize];
-  private int[] fn = new int[WordSize];
+  private long _consumedBytes;
+  private readonly int[] _codePoints = new int[WordSize];
+  private readonly int[] _fn = new int[WordSize];
 
-#if DEBUG
-  private readonly string FN_AS_STR => new(codePoints.Select(i => (char)i).ToArray());
-#endif
+  private readonly Action<int>? _onHash;
+  private readonly IntervalDelegate? _onIterval;
+  public delegate void IntervalDelegate(long start, int length, int hash);
 
-  private long consumedBytes = 0;
-
-  public SparseTrigramCollector()
+  public SparseTrigramCollector(Action<int> onHash = null, IntervalDelegate? onIterval = null)
   {
+    _onHash = onHash;
+    _onIterval = onIterval;
   }
 
   public void Feed(int codePoint)
   {
-    var i = (int) consumedBytes & WordMask;
+    var i = (int) _consumedBytes & WordMask;
 
-    if (consumedBytes >= WordSize)
+    if (_consumedBytes >= WordSize)
     {
-      int lv = fn[i]; // left value
-      int mv = fn[(i + 1) & WordMask]; // max value in the middle interval
+      int lv = _fn[i]; // left value
+      int mv = _fn[(i + 1) & WordMask]; // max value in the middle interval
       for (int j = i + 2; j < WordSize + i - 1; j++)
       {
-        int rv = fn[j & WordMask]; // right value
+        int rv = _fn[j & WordMask]; // right value
         if (mv < lv)
         {
           if (rv > mv)
@@ -50,9 +48,9 @@ public struct SparseTrigramCollector
       }
     }
 
-    codePoints[i] = codePoint;
-    fn[(i - 1) & WordMask] = DigramWeight.F(codePoints[(i - 1) & WordMask], codePoint);
-    consumedBytes++;
+    _codePoints[i] = codePoint;
+    _fn[(i - 1) & WordMask] = DigramWeight.F(_codePoints[(i - 1) & WordMask], codePoint);
+    _consumedBytes++;
   }
 
   /// startI endI are included
@@ -61,48 +59,38 @@ public struct SparseTrigramCollector
     uint hash = 0;
     for (int i = startI; i != endI; i = (i + 1) & WordMask)
     {
-      hash = MixHashes(hash, (uint)codePoints[i]);
+      hash = Utils.MixHashes(hash, (uint)_codePoints[i]);
     }
-    hash = MixHashes(hash, (uint)codePoints[endI]);
+    hash = Utils.MixHashes(hash, (uint)_codePoints[endI]);
+    
+    var finalHash = (int)(hash >> 8);
 
-#if DEBUG
-    if (System.Diagnostics.Debugger.IsAttached)
+    _onHash?.Invoke(finalHash);
+
+    if (_onIterval != null)
     {
-      var builder = new StringBuilder();
-      for (int i = startI; i != endI; i = (i + 1) & WordMask)
-      {
-        builder.Append(new Rune(codePoints[i]).ToString());
-      }
-      builder.Append(new Rune(codePoints[endI]).ToString());
-      var resultingStr = builder.ToString();
+      long start = _consumedBytes - WordSize;
+      int length = endI - startI + 1;
+      if (length <= 0) length += WordSize;
+      _onIterval(start, length, finalHash);
     }
-#endif
-
-    Trigrams.Add((int)(hash >> WordSize));
   }
 
-  private static uint murmur_32_scramble(uint k) {
-    k *= 0xcc9e2d51;
-    k = (k << 15) | (k >> 17);
-    k *= 0x1b873593;
-    return k;
-  }
-
-  private static uint MixHashes(uint hash1, uint hash2)
+  public void Run(IEnumerable<Rune> runes)
   {
-    unchecked
+    Reset();
+    foreach (var rune in runes)
     {
-      const uint m = 0x5bd1e995;
-      const int r = 24;
-      hash2 *= m;
-      hash2 ^= hash2 >> r;
-      hash2 *= m;
-
-      hash1 *= m;
-      hash1 ^= hash2;
-
-      return hash1;
+      Feed(rune.Value);
     }
+    Finish();
+  }
+
+  private void Reset()
+  {
+    // Array.Fill(_codePoints, 0);
+    Array.Fill(_fn, 0);
+    _consumedBytes = 0;
   }
 
   public void Finish()

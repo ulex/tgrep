@@ -16,6 +16,7 @@ public class IndexReader
   private readonly byte[] _trigramSchema;
 
   private int TrigramCount => (_trigramSchema.Length - 16) / 12;
+  public Preamble Preamble => _preamble;
 
   public IndexReader(Stream indexStream)
   {
@@ -131,20 +132,43 @@ public class IndexReader
     {
       case Query.And and:
       {
-        var a = EvaluateDocIds(and.A);
-        var b = EvaluateDocIds(and.B);
-        var r = SortedArrayUtil.Intersect(a, b);
-        pool.Return(b.Array!);
-        return r;
+        ArraySegment<int>? result = null;
+        foreach (var q in and.Queries)
+        {
+          var ev = EvaluateDocIds(q);
+          if (result == null)
+          {
+            result = ev;
+          }
+          else
+          {
+            result = SortedArrayUtil.Intersect(result.Value, ev);
+            pool.Return(ev.Array!);
+          }
+        }
+        
+        return result ?? EmptyArray<int>.Instance;
       }
       case Query.Or or:
       {
-        var a = EvaluateDocIds(or.A);
-        var b = EvaluateDocIds(or.B);
-        var r = SortedArrayUtil.Union(a, b, pool.Rent(a.Count + b.Count));
-        pool.Return(a.Array!);
-        pool.Return(b.Array!);
-        return r;
+        ArraySegment<int>? result = null;
+        foreach (var q in or.Queries)
+        {
+          var ev = EvaluateDocIds(q);
+          if (result == null)
+          {
+            result = ev;
+          }
+          else
+          {
+            var a = EvaluateDocIds(q);
+            var b = result.Value;
+            result = SortedArrayUtil.Union(a, b, pool.Rent(a.Count + b.Count));
+            pool.Return(a.Array!);
+            pool.Return(b.Array!);
+          }
+        }
+        return result ?? EmptyArray<int>.Instance;
       }
       case Query.Contains cq:
         return GetDocumentsIds(cq.Val, pool.Rent);
@@ -191,33 +215,80 @@ public class IndexReader
     }
     else
     {
-      for (int i = 0; i < runes.Length - 2; i++)
-      {
-        var tQuery = CreateQuery(caseSensitive, runes[i], runes[i + 1], runes[i + 2]);
-        if (query == null)
-          query = tQuery;
-        else
-          query = new Query.And(query, tQuery);
-      }
+      query = CreateNGramQuery(caseSensitive, runes);
     }
 
     return Evaluate(query!);
   }
 
-  private Query CreateQuery(bool ignoreCase, Rune a, Rune b, Rune c)
-  {
-    var trigram = new Trigram(Utils.HashCodepoint(a.Value), Utils.HashCodepoint(b.Value), Utils.HashCodepoint(c.Value));
-    Query query = new Query.Contains(trigram);
 
-    if (ignoreCase)
+  private Query CreateNGramQuery(bool caseSensitive, Rune[] runes)
+  {
+    var ngrams = new HashSet<Range>();
+    var c = new SparseTrigramCollector(onIterval: (start, length, hash) => ngrams.Add((int)start..((int)start + length)));
+    c.Run(runes);
+
+    var andQueries = new List<Query>();
+    foreach (var ngramRange in ngrams)
     {
-      foreach (var t in VaryCase(a, b, c).Except(new[] { trigram }))
-      {
-        query = new Query.Or(query, new Query.Contains(t));
-      }
+      andQueries.Add(CreateQuery(caseSensitive, runes.AsSpan()[ngramRange]));
     }
 
-    return query;
+    for (int i = 0; i < runes.Length - 2; i++)
+    {
+      andQueries.Add(CreateQuery(caseSensitive, runes.AsSpan().Slice(i, 3)));
+    }
+
+    return new Query.And(andQueries);
+  }
+
+
+  private Query CreateQuery(bool caseSensitive, ReadOnlySpan<Rune> ngram)
+  {
+    if (caseSensitive)
+    {
+      var hash = Utils.HashTrigram(ngram);
+      return new Query.Contains(new Trigram(hash));
+    }
+    else
+    {
+      var hashes = new HashSet<int>();
+      foreach (var i in VaryCase(ngram))
+      {
+        var hash = Utils.HashTrigram(i);
+        hashes.Add(hash);
+      }
+
+      var orQueries = hashes.Select(h => new Query.Contains(new Trigram(h))).ToList();
+      return new Query.Or(orQueries);
+    }
+  }
+
+  private IEnumerable<Rune[]> VaryCase(ReadOnlySpan<Rune> runes)
+  {
+    return Iterate(runes.ToArray(), 0);
+
+    static IEnumerable<Rune[]> Iterate(Rune[] mutRunes, int pos)
+    {
+      if (pos >= mutRunes.Length)
+      {
+        yield return mutRunes;
+      }
+      else
+      {
+        var r = mutRunes[pos];
+        var l = Rune.ToLowerInvariant(mutRunes[pos]);
+        var u = Rune.ToUpperInvariant(mutRunes[pos]);
+        foreach (var res in Iterate(mutRunes, pos + 1))
+          yield return res;
+        if ((mutRunes[pos] = l) != r)
+          foreach (var res in Iterate(mutRunes, pos + 1))
+            yield return res;
+        if ((mutRunes[pos] = u) != r)
+          foreach (var res in Iterate(mutRunes, pos + 1))
+            yield return res;
+      }
+    }
   }
 
   private IEnumerable<Trigram> VaryCase(Rune a, Rune b, Rune c)
@@ -237,10 +308,9 @@ public class IndexReader
     if (trigrams.Count == 0)
       return EmptyArray<DocNode>.Instance;
 
-    var head = trigrams.First();
-    var tail = trigrams.Skip(1);
-    var query1 = tail.Aggregate<Trigram, Query>(new Query.Contains(head), (a, b) => new Query.Or(new Query.Contains(b), a));
-    return Evaluate(query1);
+    var containsQueries = trigrams.Select(t => new Query.Contains(t)).ToList();
+    var query = new Query.Or(containsQueries);
+    return Evaluate(query);
   }
 
   private ArraySegment<int> GetDocumentsIds(Trigram trigram, Func<int, int[]> allocator)
@@ -324,5 +394,26 @@ public class IndexReader
     ArrayPool<byte>.Shared.Return(bytes);
 
     return new ArraySegment<int>(result, 0, i);
+  }
+
+  public void Dump(TextWriter o, bool verbose)
+  {
+    _preamble.Dump(o);
+
+    if (verbose)
+    {
+      o.WriteLine("## Trigram | list of document ids");
+      foreach (var (trigram, postingList) in ReadAllPostingLists())
+      {
+        o.WriteLine($"{trigram.Val,8} | {string.Join(',', postingList)}");
+      }
+      o.WriteLine();
+      o.WriteLine("## DocId | Path | LastWriteTime");
+      foreach (var docNode in ReadAllDocNodes())
+      {
+        o.WriteLine($"{docNode.DocId, 5} | {docNode.Path} | {docNode.LastWriteTime}");
+      }
+    }
+    o.WriteLine();
   }
 }

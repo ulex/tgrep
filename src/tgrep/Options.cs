@@ -2,11 +2,14 @@
 
 public class Options
 {
-  [Option('S', "smart-case", Required = false, HelpText = "Use ignore-case until uppercase symbols appear in query")]
+  [Option('S', "smart-case", Required = false, HelpText = "Ignore-case until uppercase symbols appear in query (default)")]
   public bool SmartCase { get; set; }
 
-  [Option('i', "ignore-case", Required = false, HelpText = "Ignore case")]
+  [Option('i', "ignore-case", Required = false, HelpText = "Ignore case (overrides smart-case)")]
   public bool IgnoreCase { get; set; }
+
+  [Option('s', "case-sensitive", Required = false, HelpText = "Case sensitive (overrides ignore-case, smart-case)")]
+  public bool CaseSensitive { get; set; }
 
   [Option('v', "verbose", Required = false, HelpText = "Verbose logging")]
   public bool Verbose { get; set; }
@@ -28,6 +31,9 @@ public class Options
   
   [Option('F', Required = false, Default = true, Hidden = true, HelpText = "Fixed strings only (the only supported option)")]
   public bool FixedStrings { get; set; }
+
+  [Option("dump", Required = false, Hidden = true, HelpText = "Dump index (internal option)")]
+  public bool Dump { get; set; }
 
   [Value(0, MetaName = "query")]
   public string? Query { get; set; }

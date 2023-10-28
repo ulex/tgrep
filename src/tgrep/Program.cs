@@ -49,16 +49,23 @@ static void RunOptions(Options opts)
   var indexPath = IndexLocationHelper.GetIndexPath(opts, currentDirectory);
 
   var cmd = new QueryCommand(def.Lifetime, indexPath, printer, searchInFiles: !opts.OnlyOutputFiles);
+
+  if (opts.Dump)
+  {
+    cmd.Dump(Console.Out, opts.Verbose);
+    return;
+  }
+
   if (opts.Query != null)
   {
-    var ignoreCase = opts.IgnoreCase || (opts.SmartCase && !opts.Query.Any(char.IsUpper));
+    var caseSensitive = opts.CaseSensitive || (!opts.IgnoreCase && !opts.Query.Any(char.IsUpper));
     if (opts.IndexOnly)
     {
-      cmd.SearchIndexOnly(opts.Query, printer, ignoreCase);
+      cmd.SearchIndexOnly(opts.Query, printer, !caseSensitive);
     }
     else
     {
-      cmd.Search(opts.Query, printer, useGitIgnore: !opts.SearchAllFiles, ignoreCase: ignoreCase);
+      cmd.Search(opts.Query, printer, useGitIgnore: !opts.SearchAllFiles, ignoreCase: !caseSensitive);
     }
   }
   else if (opts.OnlyOutputFiles && opts.IndexOnly)

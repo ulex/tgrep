@@ -70,7 +70,7 @@ public class CreateIndexTest
     var indexPath = await IndexDirectory(path);
     using (var def = new LifetimeDefinition())
     {
-      var i = new MultiIndex(def.Lifetime, "C:\\Users\\sa\\AppData\\Roaming\\.tgrep\\rd.bb9bb23d");
+      var i = MultiIndex.OpenMmap(def.Lifetime, "C:\\Users\\sa\\AppData\\Roaming\\.tgrep\\rd.bb9bb23d");
       var indexState = i.CreateIndexStateForQuery("DotPeek", false);
     }
   }

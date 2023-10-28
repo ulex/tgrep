@@ -1,4 +1,5 @@
 ﻿using System.Buffers;
+using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Text;
 using JetBrains.Annotations;
@@ -33,6 +34,7 @@ public static partial class Utils
   public static IReadOnlyCollection<int> ReadTrigrams(string path, bool ignoreBinaryFiles = true)
   {
     var m = new TrigramCollector();
+    var ml = new SparseTrigramCollector(v => m.Trigrams.Add(v));
 
     const int fileBufSize = 4096;
     const int bufSize =  + 4;
@@ -59,7 +61,9 @@ public static partial class Utils
         m.Trigrams.Clear();
         break;
       }
+      ml.Feed(rune.Value);
     }
+    ml.Finish();
 
     return m.Trigrams;
   }
@@ -105,7 +109,6 @@ public static partial class Utils
       return true;
     }
   }
-
 
   public static int ReadZigZagVarint(this BinaryReader reader)
   {
@@ -160,16 +163,49 @@ public static partial class Utils
     writer.WriteByte((byte)value);
   }
 
-  public static void WriteZigZagVarint(this Stream writer, int value)
-  {
-    int zigZagEncoded = ((value << 1) ^ (value >> 31));
-    WriteVarint(writer, zigZagEncoded);
-  }
-
   [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
   public static byte HashCodepoint(int codePoint)
   {
-    // todo: proper hash function
     return unchecked((byte)(codePoint ^ (codePoint >> 8) ^ (codePoint >> 16)));
+  }
+
+  public static int HashTrigram(ReadOnlySpan<Rune> runes)
+  {
+    if (runes.Length == 3)
+    {
+      var trigram = new Trigram(
+        HashCodepoint(runes[0].Value),
+        HashCodepoint(runes[1].Value),
+        HashCodepoint(runes[2].Value));
+      return trigram.Val;
+    }
+    else
+    {
+      // ngram hash, there is second streaming implementation in SparseTrigramCollector
+      uint hash = 0;
+      foreach (var rune in runes)
+      {
+        hash = MixHashes(hash, (uint)rune.Value);
+      }
+
+      return (int)(hash >> 8);
+    }
+  }
+
+  public static uint MixHashes(uint hash1, uint hash2)
+  {
+    unchecked
+    {
+      const uint m = 0x5bd1e995;
+      const int r = 24;
+      hash2 *= m;
+      hash2 ^= hash2 >> r;
+      hash2 *= m;
+
+      hash1 *= m;
+      hash1 ^= hash2;
+
+      return hash1;
+    }
   }
 }

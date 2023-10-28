@@ -19,19 +19,24 @@ public class QueryCommand
   {
     _printer = printer;
     _searchInFiles = searchInFiles;
-    
+
     _directory = Directory.GetCurrentDirectory();
+    _multiIndex = OpenOrCreateIndex(lifetime, indexPath, _directory, printer);
+  }
+
+  public static MultiIndex OpenOrCreateIndex(Lifetime lifetime, string indexPath, string directory, VimgrepPrinter printer)
+  {
     var watch = Stopwatch.StartNew();
     if (!File.Exists(indexPath))
     {
-      Console.Error.WriteLine($"Indexing directory... {_directory}");
+      Console.Error.WriteLine($"Indexing directory... {directory}");
       Console.Error.WriteLine($"     index location : {indexPath}");
       int n = 0;
       using (var writer = File.OpenWrite(indexPath))
       {
         var multiIndexBulder = new MultiIndexBulder(writer);
 
-        var visitTask = FileScannerBuilder.Build(_directory).Visit(
+        var visitTask = FileScannerBuilder.Build(directory).Visit(
           i =>
           {
             if (i.Path == indexPath) // ignore index file itself
@@ -64,7 +69,9 @@ public class QueryCommand
     var indexLdef = lifetime.CreateNested();
     try
     {
-      _multiIndex = new MultiIndex(indexLdef.Lifetime, indexPath);
+      var index = MultiIndex.OpenFileStream(indexLdef.Lifetime, indexPath);
+      printer.ReportIndexOpen(watch.Elapsed, index.ICount);
+      return index;
     }
     catch (Exception)
     {
@@ -72,7 +79,6 @@ public class QueryCommand
       File.Delete(indexPath);
       throw;
     }
-    printer.ReportIndexOpen(watch.Elapsed, _multiIndex.ICount);
   }
 
   public void Search(string query, VimgrepPrinter printer, bool useGitIgnore, bool ignoreCase)
@@ -146,6 +152,11 @@ public class QueryCommand
         }
       });
     printer.ReportStats(docs.Count, sw.Elapsed);
+  }
+
+  public void Dump(TextWriter o, bool verbose)
+  {
+    _multiIndex.Dump(o, verbose);
   }
 
   private void SearchInFile(string query, string path, VimgrepPrinter printer, bool ignoreCase)
