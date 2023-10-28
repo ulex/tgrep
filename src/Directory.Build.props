@@ -1,0 +1,15 @@
+<Project>
+  <PropertyGroup>
+    <LangVersion>preview</LangVersion>
+
+    <TargetFramework>net7.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Version>0.1.0</Version>
+
+    <!-- Don't include DotSettings files in project, they are not supposed to be edited manually -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);**/*.DotSettings</DefaultItemExcludes>
+  </PropertyGroup>
+
+</Project>
