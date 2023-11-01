@@ -29,7 +29,7 @@ public class VimgrepPrinter
       if (col != -1)
         col = before.Length - col;
       else
-        col = 0;
+        col = offset + 1;
 
       var context = PrinterUtil.GetLine(content, offset);
       output.AppendLine($"{path}:{line.ToString(CultureInfo.InvariantCulture)}:{col}:{context}");

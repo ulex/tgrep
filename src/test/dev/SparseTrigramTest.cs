@@ -2,6 +2,7 @@
 
 namespace test.dev;
 
+[TestFixture, Explicit]
 public class SparseTrigramTest
 {
   [TestCase("await tr.AcceptAllFiles((path, lwt, t) => index.AddDocument(path, lwt, t),")]

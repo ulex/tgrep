@@ -8,6 +8,8 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Version>0.1.0</Version>
 
+    <OutputPath>$(MSBuildThisFileDirectory)/bin/</OutputPath>
+
     <!-- Don't include DotSettings files in project, they are not supposed to be edited manually -->
     <DefaultItemExcludes>$(DefaultItemExcludes);**/*.DotSettings</DefaultItemExcludes>
   </PropertyGroup>

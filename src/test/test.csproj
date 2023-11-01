@@ -8,6 +8,9 @@
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+    <!-- It is fine to have async method without await in test projects.-->
+    <NoWarn>$(NoWarn);CS1998</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

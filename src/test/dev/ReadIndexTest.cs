@@ -3,6 +3,7 @@ using JetBrains.Lifetimes;
 
 namespace test.dev;
 
+[TestFixture, Explicit]
 public class ReadIndexTest
 {
   // [TestCase("C:\\work\\rd")]

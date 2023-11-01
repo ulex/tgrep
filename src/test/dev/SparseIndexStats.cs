@@ -2,6 +2,7 @@
 
 namespace test.dev;
 
+[TestFixture, Explicit]
 public class SparseIndexStats
 {
   private const string StatsPath = "c:\\bench\\digraph_stats.csv";
